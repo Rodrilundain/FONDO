@@ -14,10 +14,30 @@ const fontSize = 16;
 const columns = canvas.width / fontSize;
 const drops = Array(Math.floor(columns)).fill(0);
 
+const skullImage = new Image();
+skullImage.src = 'https://example.com/skull.png'; // Replace with your skull image URL
+let jawAngle = 0;
+let jawDirection = 1;
+
 // Draw the rain effect
 function draw() {
     ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (skullImage.complete) {
+        const skullX = (canvas.width - skullImage.width) / 2;
+        const skullY = (canvas.height - skullImage.height) / 2;
+
+        // Draw the skull
+        ctx.drawImage(skullImage, skullX, skullY);
+
+        // Draw the jaw movement
+        ctx.save();
+        ctx.translate(skullX + skullImage.width / 2, skullY + skullImage.height / 1.5);
+        ctx.rotate((Math.PI / 180) * jawAngle);
+        ctx.translate(-(skullX + skullImage.width / 2), -(skullY + skullImage.height / 1.5));
+        ctx.restore();
+    }
 
     ctx.fillStyle = '#0F0';
     ctx.font = `${fontSize}px monospace`;
@@ -31,6 +51,12 @@ function draw() {
         }
         drops[x]++;
     });
+
+    // Animate the jaw
+    jawAngle += jawDirection;
+    if (jawAngle > 10 || jawAngle < -10) {
+        jawDirection *= -1;
+    }
 }
 
 setInterval(draw, 50);
