@@ -1,9 +1,3 @@
-<!-- Incluye Three.js y el OrbitControls (si quieres navegación) -->
-<script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.155.0/examples/js/controls/OrbitControls.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.155.0/examples/js/loaders/GLTFLoader.js"></script>
-<canvas id="bg"></canvas>
-<script>
 // --- Parámetros principales ---
 const matrixChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*';
 const chars = matrixChars.split('');
@@ -78,26 +72,20 @@ function animate(){
 
     // Letras en caída y colisión con cráneo
     drops.forEach(d=>{
-        // Si está "cayendo"
         if(!d.sliding){
             d.y -= d.speed;
-            // Detectar colisión con cráneo (esfera de radio 1.5 centrada en 0,0,0)
             const dist = Math.sqrt(d.x*d.x + d.y*d.y + d.z*d.z);
             if(dist < 1.52){
                 d.sliding = true;
-                // Calcular ángulo en la esfera donde chocó
                 d.theta = Math.atan2(d.z, d.x);
                 d.phi = Math.acos(d.y/1.5);
                 d.slideSpeed = 0.015 + Math.random()*0.01;
             }
         } else {
-            // Desliza a lo largo de la "latitud" de la esfera
             d.theta += d.slideSpeed;
-            // Convertir a coordenadas cartesianas
             d.x = 1.52*Math.cos(d.theta)*Math.sin(d.phi);
             d.y = 1.52*Math.cos(d.phi);
             d.z = 1.52*Math.sin(d.theta)*Math.sin(d.phi);
-            // Si terminó de "deslizar", reinicia
             if(d.theta > Math.PI*2){
                 d.x = (Math.random()-0.5)*6;
                 d.y = Math.random()*6+2;
@@ -128,5 +116,3 @@ window.addEventListener('resize', ()=>{
     letterCanvas.width = window.innerWidth;
     letterCanvas.height = window.innerHeight;
 });
-
-</script>
