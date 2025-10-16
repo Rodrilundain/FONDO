@@ -2,8 +2,17 @@ body {
   margin: 0;
   overflow: hidden;
   background: black;
+  font-family: monospace;
+  color: #0f0;
 }
 
 canvas {
   display: block;
+}
+
+#letterCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
 }
