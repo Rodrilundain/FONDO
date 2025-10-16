@@ -1,4 +1,4 @@
-// Importar Three.js y cargador GLTF
+// Importar Three.js y el cargador GLTF desde unpkg directamente
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 import { GLTFLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 
@@ -18,7 +18,7 @@ const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
 directionalLight.position.set(5, 10, 7);
 scene.add(ambientLight, directionalLight);
 
-// --- Modelo del cráneo ---
+// --- Modelo del cráneo realista ---
 let skull;
 const loader = new GLTFLoader();
 loader.load(
@@ -26,6 +26,13 @@ loader.load(
   (gltf) => {
     skull = gltf.scene;
     skull.scale.set(0.8, 0.8, 0.8);
+    skull.traverse((child) => {
+      if (child.isMesh) {
+        child.material.metalness = 0.2;
+        child.material.roughness = 0.8;
+        child.material.color.set(0xf5deb3); // color hueso
+      }
+    });
     scene.add(skull);
   },
   undefined,
