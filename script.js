@@ -1,4 +1,4 @@
-// Importar Three.js y el cargador GLTF desde unpkg directamente
+// Importar Three.js y el cargador GLTF desde unpkg
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 import { GLTFLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 
@@ -18,7 +18,7 @@ const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
 directionalLight.position.set(5, 10, 7);
 scene.add(ambientLight, directionalLight);
 
-// --- Modelo del cráneo realista ---
+// --- Modelo del cráneo ---
 let skull;
 const loader = new GLTFLoader();
 loader.load(
@@ -39,12 +39,12 @@ loader.load(
   (error) => console.error("Error al cargar modelo:", error)
 );
 
-// --- Letras ---
+// --- Letras Matrix ---
 const matrixChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*";
 const chars = matrixChars.split("");
-
 const dropsCount = 150;
 const drops = [];
+
 for (let i = 0; i < dropsCount; i++) {
   drops.push({
     x: (Math.random() - 0.5) * 6,
@@ -58,7 +58,7 @@ for (let i = 0; i < dropsCount; i++) {
   });
 }
 
-// --- Canvas de letras ---
+// --- Canvas para letras ---
 const letterCanvas = document.createElement("canvas");
 letterCanvas.id = "letterCanvas";
 letterCanvas.width = window.innerWidth;
@@ -66,9 +66,8 @@ letterCanvas.height = window.innerHeight;
 document.body.appendChild(letterCanvas);
 const ctx = letterCanvas.getContext("2d");
 
-// --- Movimiento de cámara con mouse ---
-let mouseX = 0;
-let mouseY = 0;
+// --- Movimiento del cráneo con mouse ---
+let mouseX = 0, mouseY = 0;
 window.addEventListener("mousemove", (e) => {
   mouseX = (e.clientX / window.innerWidth - 0.5) * Math.PI;
   mouseY = (e.clientY / window.innerHeight - 0.5) * Math.PI / 2;
@@ -123,7 +122,7 @@ function animate() {
 }
 animate();
 
-// --- Ajuste responsive ---
+// --- Responsive ---
 window.addEventListener("resize", () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
   camera.aspect = window.innerWidth / window.innerHeight;
