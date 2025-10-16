@@ -1,7 +1,3 @@
-// Importar Three.js y GLTFLoader desde unpkg
-import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
-import { GLTFLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
-
 // --- Configuración básica ---
 const canvas = document.getElementById("bg");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -20,13 +16,13 @@ scene.add(ambientLight, directionalLight);
 
 // --- Cargar modelo de cráneo ---
 let skull;
-const loader = new GLTFLoader();
+const loader = new THREE.GLTFLoader();
 loader.load(
   "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/BrainStem/glTF/BrainStem.gltf",
-  (gltf) => {
+  function(gltf) {
     skull = gltf.scene;
     skull.scale.set(0.8, 0.8, 0.8);
-    skull.traverse((child) => {
+    skull.traverse(function(child) {
       if (child.isMesh) {
         child.material.metalness = 0.2;
         child.material.roughness = 0.8;
@@ -36,7 +32,9 @@ loader.load(
     scene.add(skull);
   },
   undefined,
-  (error) => console.error("Error al cargar modelo:", error)
+  function(error) {
+    console.error("Error al cargar modelo:", error);
+  }
 );
 
 // --- Letras estilo Matrix ---
@@ -58,7 +56,7 @@ for (let i = 0; i < dropsCount; i++) {
   });
 }
 
-// --- Canvas de letras ---
+// --- Canvas para letras ---
 const letterCanvas = document.createElement("canvas");
 letterCanvas.id = "letterCanvas";
 letterCanvas.width = window.innerWidth;
@@ -68,7 +66,7 @@ const ctx = letterCanvas.getContext("2d");
 
 // --- Movimiento del cráneo con mouse ---
 let mouseX = 0, mouseY = 0;
-window.addEventListener("mousemove", (e) => {
+window.addEventListener("mousemove", function(e) {
   mouseX = (e.clientX / window.innerWidth - 0.5) * Math.PI;
   mouseY = (e.clientY / window.innerHeight - 0.5) * Math.PI / 2;
 });
@@ -84,10 +82,10 @@ function animate() {
 
   ctx.clearRect(0, 0, letterCanvas.width, letterCanvas.height);
 
-  drops.forEach((d) => {
+  drops.forEach(function(d) {
     if (!d.sliding) {
       d.y -= d.speed;
-      const dist = Math.sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+      const dist = Math.sqrt(d.x*d.x + d.y*d.y + d.z*d.z);
       if (dist < 1.6) {
         d.sliding = true;
         d.theta = Math.atan2(d.z, d.x);
@@ -110,8 +108,8 @@ function animate() {
 
     const pos = new THREE.Vector3(d.x, d.y, d.z);
     pos.project(camera);
-    const px = (pos.x * 0.5 + 0.5) * window.innerWidth;
-    const py = (-pos.y * 0.5 + 0.5) * window.innerHeight;
+    const px = (pos.x*0.5 + 0.5) * window.innerWidth;
+    const py = (-pos.y*0.5 + 0.5) * window.innerHeight;
 
     ctx.fillStyle = "#0F0";
     ctx.font = "18px monospace";
@@ -123,7 +121,7 @@ function animate() {
 animate();
 
 // --- Responsive ---
-window.addEventListener("resize", () => {
+window.addEventListener("resize", function() {
   renderer.setSize(window.innerWidth, window.innerHeight);
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
