@@ -17,11 +17,10 @@
   <body>
     <canvas id="bg"></canvas>
 
-    <!-- Librerías -->
-    <script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.155.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script type="module">
+      import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
+      import { GLTFLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 
-    <script>
       // --- Configuración base ---
       const matrixChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*';
       const chars = matrixChars.split('');
@@ -43,9 +42,9 @@
 
       // --- Cargar cráneo realista ---
       let skull = null;
-      const loader = new THREE.GLTFLoader();
+      const loader = new GLTFLoader();
       loader.load(
-        'https://raw.githubusercontent.com/pmndrs/drei-assets/main/skull.glb', // modelo realista ligero
+        'https://raw.githubusercontent.com/pmndrs/drei-assets/main/skull.glb',
         gltf => {
           skull = gltf.scene;
           skull.scale.set(2, 2, 2);
