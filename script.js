@@ -1,4 +1,4 @@
-// --- Configuración básica ---
+// --- Configuración base ---
 const canvas = document.getElementById("bg");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -14,11 +14,11 @@ const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
 directionalLight.position.set(5, 10, 7);
 scene.add(ambientLight, directionalLight);
 
-// --- Cargar modelo de cráneo ---
+// --- Cargar cráneo desde carpeta local ---
 let skull;
 const loader = new THREE.GLTFLoader();
 loader.load(
-  "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/BrainStem/glTF/BrainStem.gltf",
+  "./js/models/craneo.glb",
   function(gltf) {
     skull = gltf.scene;
     skull.scale.set(0.8, 0.8, 0.8);
@@ -33,23 +33,23 @@ loader.load(
   },
   undefined,
   function(error) {
-    console.error("Error al cargar modelo:", error);
+    console.error("Error al cargar el cráneo:", error);
   }
 );
 
-// --- Letras estilo Matrix ---
+// --- Letras Matrix ---
 const matrixChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*";
 const chars = matrixChars.split("");
-const dropsCount = 150;
+const dropsCount = 250; // más partículas para cubrir toda la pantalla
 const drops = [];
 
 for (let i = 0; i < dropsCount; i++) {
   drops.push({
-    x: (Math.random() - 0.5) * 6,
-    y: Math.random() * 6 + 2,
-    z: (Math.random() - 0.5) * 2,
+    x: (Math.random() - 0.5) * 12, // mayor ancho
+    y: Math.random() * 12 + 2, // mayor altura
+    z: (Math.random() - 0.5) * 4,
     char: chars[Math.floor(Math.random() * chars.length)],
-    speed: 0.02 + Math.random() * 0.03,
+    speed: 0.02 + Math.random() * 0.04,
     sliding: false,
     theta: 0,
     phi: 0,
@@ -90,7 +90,7 @@ function animate() {
         d.sliding = true;
         d.theta = Math.atan2(d.z, d.x);
         d.phi = Math.acos(d.y / 1.5);
-        d.slideSpeed = 0.015 + Math.random() * 0.01;
+        d.slideSpeed = 0.015 + Math.random() * 0.02;
       }
     } else {
       d.theta += d.slideSpeed;
@@ -98,9 +98,9 @@ function animate() {
       d.y = 1.6 * Math.cos(d.phi);
       d.z = 1.6 * Math.sin(d.theta) * Math.sin(d.phi);
       if (d.theta > Math.PI * 2) {
-        d.x = (Math.random() - 0.5) * 6;
-        d.y = Math.random() * 6 + 2;
-        d.z = (Math.random() - 0.5) * 2;
+        d.x = (Math.random() - 0.5) * 12;
+        d.y = Math.random() * 12 + 2;
+        d.z = (Math.random() - 0.5) * 4;
         d.char = chars[Math.floor(Math.random() * chars.length)];
         d.sliding = false;
       }
