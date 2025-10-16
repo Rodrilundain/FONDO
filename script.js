@@ -1,8 +1,8 @@
-// Importar Three.js y el cargador GLTF desde unpkg
+// Importar Three.js y GLTFLoader desde unpkg
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 import { GLTFLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 
-// --- Configuración base ---
+// --- Configuración básica ---
 const canvas = document.getElementById("bg");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -18,7 +18,7 @@ const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
 directionalLight.position.set(5, 10, 7);
 scene.add(ambientLight, directionalLight);
 
-// --- Modelo del cráneo ---
+// --- Cargar modelo de cráneo ---
 let skull;
 const loader = new GLTFLoader();
 loader.load(
@@ -30,7 +30,7 @@ loader.load(
       if (child.isMesh) {
         child.material.metalness = 0.2;
         child.material.roughness = 0.8;
-        child.material.color.set(0xf5deb3); // color hueso
+        child.material.color.set(0xf5deb3);
       }
     });
     scene.add(skull);
@@ -39,7 +39,7 @@ loader.load(
   (error) => console.error("Error al cargar modelo:", error)
 );
 
-// --- Letras Matrix ---
+// --- Letras estilo Matrix ---
 const matrixChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*";
 const chars = matrixChars.split("");
 const dropsCount = 150;
@@ -58,7 +58,7 @@ for (let i = 0; i < dropsCount; i++) {
   });
 }
 
-// --- Canvas para letras ---
+// --- Canvas de letras ---
 const letterCanvas = document.createElement("canvas");
 letterCanvas.id = "letterCanvas";
 letterCanvas.width = window.innerWidth;
