@@ -2,20 +2,209 @@
 <html lang="es">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Interactive Tentacle - Medusa</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pulpo Tesla Vivo ⚡</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: radial-gradient(circle at center, #030712 0%, #000 90%);
+      font-family: "Inter", sans-serif;
+      color: #7dcaff;
+      user-select: none;
+      touch-action: none;
+    }
+    h1 {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #7dcaff;
+      text-shadow: 0 0 8px rgba(0,180,255,0.4);
+      font-weight: 400;
+      font-size: 1em;
+      letter-spacing: 0.08em;
+      z-index: 2;
+    }
+    canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      display: block;
+      cursor: none;
+    }
+  </style>
 </head>
 <body>
-  <header>
-    <h1>Interactive Tentacle — Medusa que sigue el mouse</h1>
-    <p>Move your mouse / toca la pantalla</p>
-  </header>
+  <h1>Pulpo Tesla ⚡ Vivo</h1>
+  <canvas id="canvas"></canvas>
 
-  <main>
-    <canvas id="canvas"></canvas>
-  </main>
+  <script>
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d", { alpha: true });
 
-  <script src="script.js"></script>
+    function resizeCanvas() {
+      canvas.width = window.innerWidth * devicePixelRatio;
+      canvas.height = window.innerHeight * devicePixelRatio;
+      ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+    }
+    window.addEventListener("resize", resizeCanvas);
+    resizeCanvas();
+
+    // --- Movimiento inteligente ---
+    const pointer = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    const core = { 
+      x: window.innerWidth / 2, 
+      y: window.innerHeight / 2, 
+      vx: 0, 
+      vy: 0,
+      radius: 30
+    };
+
+    let lastMove = Date.now();
+
+    function updatePointer(x, y) {
+      pointer.x = x;
+      pointer.y = y;
+      lastMove = Date.now();
+    }
+
+    window.addEventListener("mousemove", e => updatePointer(e.clientX, e.clientY));
+    window.addEventListener("touchmove", e => {
+      e.preventDefault();
+      const t = e.touches[0];
+      updatePointer(t.clientX, t.clientY);
+    }, { passive: false });
+
+    // --- Tentáculos ---
+    class Tentacle {
+      constructor(core, angle, options = {}) {
+        this.core = core;
+        this.angle = angle;
+        this.length = options.length || 100 + Math.random() * 80;
+        this.segments = [];
+        this.noise = Math.random() * 100;
+        this.phase = Math.random() * Math.PI * 2;
+
+        const segCount = Math.floor(this.length / 10);
+        for (let i = 0; i < segCount; i++) {
+          this.segments.push({ x: core.x, y: core.y });
+        }
+      }
+
+      update(t) {
+        const baseAngle = this.angle + Math.sin(t * 0.001 + this.phase) * 0.3;
+        const dirX = Math.cos(baseAngle) * 180;
+        const dirY = Math.sin(baseAngle) * 180;
+
+        let prevX = this.core.x;
+        let prevY = this.core.y;
+        const segLen = 10;
+
+        for (let i = 0; i < this.segments.length; i++) {
+          const seg = this.segments[i];
+          const pct = i / this.segments.length;
+          const wave = Math.sin(t * 0.004 + this.noise + i * 0.3) * 60 * (1 - pct);
+          const swayAngle = baseAngle + Math.PI / 2;
+          const targetX = this.core.x + dirX * pct + wave * Math.cos(swayAngle);
+          const targetY = this.core.y + dirY * pct + wave * Math.sin(swayAngle);
+
+          const dx = targetX - prevX;
+          const dy = targetY - prevY;
+          const dist = Math.hypot(dx, dy) || 1;
+          const ratio = segLen / dist;
+
+          seg.x = prevX + dx * ratio;
+          seg.y = prevY + dy * ratio;
+
+          prevX = seg.x;
+          prevY = seg.y;
+        }
+      }
+
+      draw(ctx, flicker) {
+        const grad = ctx.createLinearGradient(
+          this.core.x, this.core.y,
+          this.segments[this.segments.length - 1].x,
+          this.segments[this.segments.length - 1].y
+        );
+        grad.addColorStop(0, `rgba(0,200,255,${0.8 + flicker * 0.2})`);
+        grad.addColorStop(1, `rgba(150,0,255,${0.3 + flicker * 0.2})`);
+
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        ctx.beginPath();
+        ctx.moveTo(this.core.x, this.core.y);
+        for (const p of this.segments) ctx.lineTo(p.x, p.y);
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 2 + flicker * 2;
+        ctx.shadowBlur = 25 + flicker * 45;
+        ctx.shadowColor = `rgba(80,200,255,${0.7})`;
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    const tentacles = [];
+    const total = 36;
+    for (let i = 0; i < total; i++) {
+      const angle = (i / total) * Math.PI * 2;
+      tentacles.push(new Tentacle(core, angle));
+    }
+
+    // --- Animación principal ---
+    function animate(t) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const timeSinceMove = Date.now() - lastMove;
+      const flicker = Math.random() * 0.6;
+
+      // Si el usuario no mueve el mouse, flota suavemente
+      const targetX = pointer.x + Math.sin(t * 0.001) * 100 * Math.min(timeSinceMove / 2000, 1);
+      const targetY = pointer.y + Math.cos(t * 0.0013) * 80 * Math.min(timeSinceMove / 2000, 1);
+
+      // Movimiento con inercia
+      const ax = (targetX - core.x) * 0.01;
+      const ay = (targetY - core.y) * 0.01;
+      core.vx += ax;
+      core.vy += ay;
+      core.vx *= 0.95;
+      core.vy *= 0.95;
+      core.x += core.vx;
+      core.y += core.vy;
+
+      // Glow central
+      ctx.save();
+      const g = ctx.createRadialGradient(core.x, core.y, 0, core.x, core.y, 150);
+      g.addColorStop(0, `rgba(120,210,255,${0.9 + flicker * 0.2})`);
+      g.addColorStop(0.3, `rgba(80,150,255,${0.3 + flicker * 0.2})`);
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(core.x, core.y, core.radius * (3.5 + flicker * 0.8), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // Núcleo eléctrico
+      ctx.beginPath();
+      ctx.fillStyle = `rgba(180,220,255,${0.9 + flicker * 0.2})`;
+      ctx.arc(core.x, core.y, core.radius * (1.1 + flicker * 0.1), 0, Math.PI * 2);
+      ctx.fill();
+
+      // Tentáculos vivos
+      for (const tacle of tentacles) {
+        tacle.update(t);
+        tacle.draw(ctx, flicker);
+      }
+
+      requestAnimationFrame(animate);
+    }
+
+    requestAnimationFrame(animate);
+  </script>
 </body>
 </html>
