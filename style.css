@@ -1,18 +1,15 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html,body { height: 100%; }
 body {
-  margin: 0;
-  overflow: hidden;
-  background: black;
-  font-family: monospace;
-  color: #0f0;
+  background: #050507;
+  color: #e6eefc;
+  font-family: Inter, Helvetica, Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
 }
-
-canvas {
-  display: block;
-}
-
-#letterCanvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-  pointer-events: none;
-}
+header { text-align: center; margin-top: 18px; }
+main { width: 100%; height: calc(100% - 80px); display:flex; align-items:center; justify-content:center; }
+canvas { width: 90vmin; height: 90vmin; max-width: 900px; max-height: 900px; background: rgba(0,0,0,0.0); border-radius: 8px; display:block; }
