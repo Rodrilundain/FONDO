@@ -1,130 +1,194 @@
-// --- Configuración base ---
-const canvas = document.getElementById("bg");
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(window.devicePixelRatio);
+// Interactive Tentacle / Medusa que sigue el mouse
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d', { alpha: true });
 
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
-camera.position.set(0, 0, 6);
-
-// --- Luces ---
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-directionalLight.position.set(5, 10, 7);
-scene.add(ambientLight, directionalLight);
-
-// --- Cargar cráneo desde carpeta local ---
-let skull;
-const loader = new THREE.GLTFLoader();
-loader.load(
-  "./js/models/craneo.glb",
-  function(gltf) {
-    skull = gltf.scene;
-    skull.scale.set(0.8, 0.8, 0.8);
-    skull.traverse(function(child) {
-      if (child.isMesh) {
-        child.material.metalness = 0.2;
-        child.material.roughness = 0.8;
-        child.material.color.set(0xf5deb3);
-      }
-    });
-    scene.add(skull);
-  },
-  undefined,
-  function(error) {
-    console.error("Error al cargar el cráneo:", error);
-  }
-);
-
-// --- Letras Matrix ---
-const matrixChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*";
-const chars = matrixChars.split("");
-const dropsCount = 250; // más partículas para cubrir toda la pantalla
-const drops = [];
-
-for (let i = 0; i < dropsCount; i++) {
-  drops.push({
-    x: (Math.random() - 0.5) * 12, // mayor ancho
-    y: Math.random() * 12 + 2, // mayor altura
-    z: (Math.random() - 0.5) * 4,
-    char: chars[Math.floor(Math.random() * chars.length)],
-    speed: 0.02 + Math.random() * 0.04,
-    sliding: false,
-    theta: 0,
-    phi: 0,
-  });
+function resizeCanvas() {
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = Math.floor(rect.width * devicePixelRatio);
+  canvas.height = Math.floor(rect.height * devicePixelRatio);
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
 }
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
 
-// --- Canvas para letras ---
-const letterCanvas = document.createElement("canvas");
-letterCanvas.id = "letterCanvas";
-letterCanvas.width = window.innerWidth;
-letterCanvas.height = window.innerHeight;
-document.body.appendChild(letterCanvas);
-const ctx = letterCanvas.getContext("2d");
+// Mouse / touch state
+const pointer = { x: canvas.width/2, y: canvas.height/2, isDown:false };
 
-// --- Movimiento del cráneo con mouse ---
-let mouseX = 0, mouseY = 0;
-window.addEventListener("mousemove", function(e) {
-  mouseX = (e.clientX / window.innerWidth - 0.5) * Math.PI;
-  mouseY = (e.clientY / window.innerHeight - 0.5) * Math.PI / 2;
+// core (la "cabeza" de la medusa)
+const core = { x: canvas.width/2 / devicePixelRatio, y: canvas.height/2 / devicePixelRatio, radius: 18 };
+
+canvas.addEventListener('mousemove', (e) => {
+  const r = canvas.getBoundingClientRect();
+  pointer.x = (e.clientX - r.left);
+  pointer.y = (e.clientY - r.top);
 });
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect();
+  const t = e.touches[0];
+  pointer.x = (t.clientX - r.left);
+  pointer.y = (t.clientY - r.top);
+}, { passive: false });
 
-// --- Animación ---
-function animate() {
-  requestAnimationFrame(animate);
+canvas.addEventListener('mousedown', () => pointer.isDown = true);
+canvas.addEventListener('mouseup', () => pointer.isDown = false);
+canvas.addEventListener('touchstart', () => pointer.isDown = true, { passive: true });
+canvas.addEventListener('touchend', () => pointer.isDown = false);
 
-  if (skull) {
-    skull.rotation.y += (mouseX - skull.rotation.y) * 0.07;
-    skull.rotation.x += (mouseY - skull.rotation.x) * 0.07;
+// Tentacle class
+class Tentacle {
+  constructor(core, angle, options = {}) {
+    this.core = core;
+    this.angle = angle;
+    this.length = options.length || 28;         // número de segmentos
+    this.segmentLength = options.segmentLength || 10;
+    this.segments = [];
+    this.noise = Math.random() * 100;
+    this.phase = Math.random() * Math.PI * 2;
+
+    for (let i = 0; i < this.length; i++) {
+      this.segments.push({
+        x: core.x,
+        y: core.y,
+        offset: i * 0.25 + Math.random() * 0.6
+      });
+    }
   }
 
-  ctx.clearRect(0, 0, letterCanvas.width, letterCanvas.height);
+  update(targetX, targetY, t) {
+    // El primer objetivo está cerca del core pero ligeramente hacia el ángulo base.
+    const baseAngle = this.angle;
+    // target blend: mezcla entre mouse y base direction
+    const dirX = Math.cos(baseAngle) * 50;
+    const dirY = Math.sin(baseAngle) * 50;
 
-  drops.forEach(function(d) {
-    if (!d.sliding) {
-      d.y -= d.speed;
-      const dist = Math.sqrt(d.x*d.x + d.y*d.y + d.z*d.z);
-      if (dist < 1.6) {
-        d.sliding = true;
-        d.theta = Math.atan2(d.z, d.x);
-        d.phi = Math.acos(d.y / 1.5);
-        d.slideSpeed = 0.015 + Math.random() * 0.02;
-      }
-    } else {
-      d.theta += d.slideSpeed;
-      d.x = 1.6 * Math.cos(d.theta) * Math.sin(d.phi);
-      d.y = 1.6 * Math.cos(d.phi);
-      d.z = 1.6 * Math.sin(d.theta) * Math.sin(d.phi);
-      if (d.theta > Math.PI * 2) {
-        d.x = (Math.random() - 0.5) * 12;
-        d.y = Math.random() * 12 + 2;
-        d.z = (Math.random() - 0.5) * 4;
-        d.char = chars[Math.floor(Math.random() * chars.length)];
-        d.sliding = false;
-      }
+    const aimX = targetX * 0.9 + (this.core.x + dirX) * 0.1;
+    const aimY = targetY * 0.9 + (this.core.y + dirY) * 0.1;
+
+    // actualizar primer segmento hacia aim con algo de ruido/sinusoide
+    let prevX = this.core.x;
+    let prevY = this.core.y;
+    for (let i = 0; i < this.segments.length; i++) {
+      const seg = this.segments[i];
+
+      // objetivo para este segmento: una interpolación hacia aim, con ondas
+      const pct = i / this.segments.length;
+      const wave = Math.sin((t * 0.003 + this.noise + i * 0.15) + this.phase) * (8 + 20 * (1 - pct));
+      const targetSegX = aimX + Math.cos(baseAngle + Math.PI/2) * wave * (0.6 + pct * 1.2);
+      const targetSegY = aimY + Math.sin(baseAngle + Math.PI/2) * wave * (0.6 + pct * 1.2);
+
+      // follow previous segment smoothly
+      const dx = targetSegX - seg.x;
+      const dy = targetSegY - seg.y;
+      const dist = Math.hypot(dx, dy) || 1;
+      const desired = this.segmentLength;
+      const ratio = desired / dist;
+
+      // move the segment towards the target but keep distance stable
+      seg.x = targetSegX - dx * (1 - 0.12) * 0.9;
+      seg.y = targetSegY - dy * (1 - 0.12) * 0.9;
+
+      // further enforce linkage with prev segment for smooth chain
+      const linkDx = seg.x - prevX;
+      const linkDy = seg.y - prevY;
+      const linkDist = Math.hypot(linkDx, linkDy) || 1;
+      const linkRatio = (this.segmentLength / linkDist);
+      seg.x = prevX + linkDx * linkRatio;
+      seg.y = prevY + linkDy * linkRatio;
+
+      prevX = seg.x;
+      prevY = seg.y;
+    }
+  }
+
+  draw(ctx) {
+    // stroke path with gradient-like style
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // glow
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    // primary stroke
+    ctx.beginPath();
+    for (let i = 0; i < this.segments.length; i++) {
+      const p = this.segments[i];
+      if (i === 0) ctx.moveTo(this.core.x, this.core.y);
+      ctx.lineTo(p.x, p.y);
+    }
+    ctx.strokeStyle = 'rgba(80,170,255,0.18)';
+    ctx.stroke();
+
+    // main line
+    ctx.beginPath();
+    for (let i = 0; i < this.segments.length; i++) {
+      const p = this.segments[i];
+      if (i === 0) ctx.moveTo(this.core.x, this.core.y);
+      ctx.lineTo(p.x, p.y);
+    }
+    // gradient along the first segment using alpha per segment
+    for (let i = 0; i < 2; i++) {
+      ctx.strokeStyle = `rgba(120,200,255,${0.18 + i*0.2})`;
+      ctx.lineWidth = 1.6 - i*0.6;
+      ctx.stroke();
     }
 
-    const pos = new THREE.Vector3(d.x, d.y, d.z);
-    pos.project(camera);
-    const px = (pos.x*0.5 + 0.5) * window.innerWidth;
-    const py = (-pos.y*0.5 + 0.5) * window.innerHeight;
-
-    ctx.fillStyle = "#0F0";
-    ctx.font = "18px monospace";
-    ctx.fillText(d.char, px, py);
-  });
-
-  renderer.render(scene, camera);
+    ctx.restore();
+  }
 }
-animate();
 
-// --- Responsive ---
-window.addEventListener("resize", function() {
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  letterCanvas.width = window.innerWidth;
-  letterCanvas.height = window.innerHeight;
-});
+// Generar varios tentáculos con ángulos en abanico
+const tentacles = [];
+const total = 18;
+for (let i = 0; i < total; i++) {
+  const angle = -Math.PI/2 + (i - (total-1)/2) * (Math.PI / (total*1.4));
+  tentacles.push(new Tentacle(core, angle, { length: 30, segmentLength: 10 }));
+}
+
+// anim loop
+let last = performance.now();
+function animate(t) {
+  const now = t || performance.now();
+  const dt = now - last;
+  last = now;
+
+  // clear
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // update core position — suavizado hacia pointer
+  const r = 0.08;
+  core.x += (pointer.x - core.x) * r;
+  core.y += (pointer.y - core.y) * r;
+
+  // optional pulsation
+  const pulse = 1 + Math.sin(now * 0.005) * 0.06;
+
+  // draw core glow
+  ctx.save();
+  ctx.beginPath();
+  const g = ctx.createRadialGradient(core.x, core.y, 0, core.x, core.y, 60);
+  g.addColorStop(0, 'rgba(130,210,255,0.95)');
+  g.addColorStop(0.25, 'rgba(80,170,255,0.18)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.arc(core.x, core.y, core.radius * pulse * 3.4, 0, Math.PI*2);
+  ctx.fill();
+
+  // draw core circle
+  ctx.beginPath();
+  ctx.fillStyle = 'rgba(120,200,255,0.98)';
+  ctx.arc(core.x, core.y, core.radius * pulse, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+
+  // update & draw tentacles
+  for (const tacle of tentacles) {
+    tacle.update(core.x + (pointer.x - core.x) * 0.6, core.y + (pointer.y - core.y) * 0.6, now);
+    tacle.draw(ctx);
+  }
+
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
