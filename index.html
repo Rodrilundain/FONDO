@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  
+  <title>Pulpo Interactivo</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
@@ -37,15 +37,61 @@
       display: block;
       cursor: none;
     }
+    .color-picker {
+      position: absolute;
+      top: 15px;
+      right: 15px;
+      z-index: 5;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(0,0,0,0.4);
+      padding: 8px 12px;
+      border-radius: 12px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+    }
+    .color-picker label {
+      color: #9cdcff;
+      font-size: 0.9em;
+    }
+    .color-picker input[type="color"] {
+      width: 36px;
+      height: 36px;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      background: transparent;
+    }
   </style>
 </head>
 <body>
   
   <canvas id="canvas"></canvas>
 
+  <div class="color-picker">
+    <label for="color">Color:</label>
+    <input type="color" id="color" value="#7dcaff" />
+  </div>
+
   <script>
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d", { alpha: true });
+    const colorPicker = document.getElementById("color");
+
+    // Color dinámico
+    let mainColor = colorPicker.value;
+
+    colorPicker.addEventListener("input", (e) => {
+      mainColor = e.target.value;
+    });
+
+    function hexToRgb(hex) {
+      const bigint = parseInt(hex.slice(1), 16);
+      const r = (bigint >> 16) & 255;
+      const g = (bigint >> 8) & 255;
+      const b = bigint & 255;
+      return { r, g, b };
+    }
 
     function resizeCanvas() {
       canvas.width = window.innerWidth * devicePixelRatio;
@@ -55,7 +101,7 @@
     window.addEventListener("resize", resizeCanvas);
     resizeCanvas();
 
-    // --- Movimiento inteligente ---
+    // --- Movimiento ---
     const pointer = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
     const core = { 
       x: window.innerWidth / 2, 
@@ -127,13 +173,14 @@
       }
 
       draw(ctx, flicker) {
+        const { r, g, b } = hexToRgb(mainColor);
         const grad = ctx.createLinearGradient(
           this.core.x, this.core.y,
           this.segments[this.segments.length - 1].x,
           this.segments[this.segments.length - 1].y
         );
-        grad.addColorStop(0, `rgba(0,200,255,${0.8 + flicker * 0.2})`);
-        grad.addColorStop(1, `rgba(150,0,255,${0.3 + flicker * 0.2})`);
+        grad.addColorStop(0, `rgba(${r},${g},${b},${0.8 + flicker * 0.2})`);
+        grad.addColorStop(1, `rgba(${r * 0.4},${g * 0.4},${b * 0.4},${0.3 + flicker * 0.2})`);
 
         ctx.save();
         ctx.globalCompositeOperation = "lighter";
@@ -143,31 +190,29 @@
         ctx.strokeStyle = grad;
         ctx.lineWidth = 2 + flicker * 2;
         ctx.shadowBlur = 25 + flicker * 45;
-        ctx.shadowColor = `rgba(80,200,255,${0.7})`;
+        ctx.shadowColor = `rgba(${r},${g},${b},0.7)`;
         ctx.stroke();
         ctx.restore();
       }
     }
 
     const tentacles = [];
-    const total = 25;
+    const total = 65;
     for (let i = 0; i < total; i++) {
       const angle = (i / total) * Math.PI * 2;
       tentacles.push(new Tentacle(core, angle));
     }
 
-    // --- Animación principal ---
+    // --- Animación ---
     function animate(t) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       const timeSinceMove = Date.now() - lastMove;
       const flicker = Math.random() * 0.6;
 
-      // Si el usuario no mueve el mouse, flota suavemente
       const targetX = pointer.x + Math.sin(t * 0.001) * 100 * Math.min(timeSinceMove / 2000, 1);
       const targetY = pointer.y + Math.cos(t * 0.0013) * 80 * Math.min(timeSinceMove / 2000, 1);
 
-      // Movimiento con inercia
       const ax = (targetX - core.x) * 0.01;
       const ay = (targetY - core.y) * 0.01;
       core.vx += ax;
@@ -177,25 +222,27 @@
       core.x += core.vx;
       core.y += core.vy;
 
+      const { r, g, b } = hexToRgb(mainColor);
+
       // Glow central
       ctx.save();
-      const g = ctx.createRadialGradient(core.x, core.y, 0, core.x, core.y, 150);
-      g.addColorStop(0, `rgba(120,210,255,${0.9 + flicker * 0.2})`);
-      g.addColorStop(0.3, `rgba(80,150,255,${0.3 + flicker * 0.2})`);
-      g.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = g;
+      const gGlow = ctx.createRadialGradient(core.x, core.y, 0, core.x, core.y, 150);
+      gGlow.addColorStop(0, `rgba(${r},${g},${b},${0.9 + flicker * 0.2})`);
+      gGlow.addColorStop(0.3, `rgba(${r * 0.7},${g * 0.7},${b * 0.7},${0.3 + flicker * 0.2})`);
+      gGlow.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = gGlow;
       ctx.beginPath();
       ctx.arc(core.x, core.y, core.radius * (3.5 + flicker * 0.8), 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
 
-      // Núcleo eléctrico
+      // Núcleo
       ctx.beginPath();
-      ctx.fillStyle = `rgba(180,220,255,${0.9 + flicker * 0.2})`;
+      ctx.fillStyle = `rgba(${r},${g},${b},${0.9 + flicker * 0.2})`;
       ctx.arc(core.x, core.y, core.radius * (1.1 + flicker * 0.1), 0, Math.PI * 2);
       ctx.fill();
 
-      // Tentáculos vivos
+      // Tentáculos
       for (const tacle of tentacles) {
         tacle.update(t);
         tacle.draw(ctx, flicker);
