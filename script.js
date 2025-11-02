@@ -141,7 +141,7 @@ class Tentacle {
 
 // Generar varios tentáculos con ángulos en abanico
 const tentacles = [];
-const total = 18;
+const total = 25;
 for (let i = 0; i < total; i++) {
   const angle = -Math.PI/2 + (i - (total-1)/2) * (Math.PI / (total*1.4));
   tentacles.push(new Tentacle(core, angle, { length: 30, segmentLength: 10 }));
