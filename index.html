@@ -205,7 +205,7 @@
 
         const data = await response.json();
         document.querySelector(".msg.bot:last-child").textContent = data.reply;
-        mainColor = data.color || mainColor;
+        if (data.color) mainColor = data.color; // cambia el color según emoción
         pulse = 6;
       } catch (error) {
         document.querySelector(".msg.bot:last-child").textContent =
