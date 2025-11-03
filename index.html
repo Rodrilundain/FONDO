@@ -38,7 +38,7 @@
     .menu {
       position: absolute;
       top: 55px; right: 15px;
-      width: 260px;
+      width: 270px;
       background: rgba(0,0,0,0.85);
       border: 1px solid rgba(255,255,255,0.1);
       border-radius: 12px;
@@ -87,6 +87,51 @@
       color: #9cdcff;
       opacity: 0.8;
     }
+
+    /* Chat */
+    .chat {
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 90%;
+      max-width: 480px;
+      background: rgba(0,0,0,0.6);
+      border-top-left-radius: 14px;
+      border-top-right-radius: 14px;
+      box-shadow: 0 -2px 18px rgba(0,0,0,0.6);
+      display: none;
+      flex-direction: column;
+      padding: 12px;
+      color: #cde9ff;
+      z-index: 20;
+      backdrop-filter: blur(10px);
+    }
+    .messages {
+      flex: 1;
+      max-height: 260px;
+      overflow-y: auto;
+      font-size: 0.9em;
+      margin-bottom: 8px;
+    }
+    .msg {
+      margin: 4px 0;
+      padding: 6px 10px;
+      border-radius: 8px;
+      line-height: 1.3;
+    }
+    .msg.user { background: rgba(125,202,255,0.15); text-align: right; }
+    .msg.bot { background: rgba(125,202,255,0.05); text-align: left; }
+    .chat input {
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: none;
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+      width: 100%;
+      outline: none;
+      font-family: inherit;
+    }
   </style>
 </head>
 <body>
@@ -115,6 +160,12 @@
     </div>
   </div>
 
+  <!-- Chat -->
+  <div class="chat" id="chat">
+    <div class="messages" id="messages"></div>
+    <input type="text" id="question" placeholder="Escribí tu pregunta y presioná Enter...">
+  </div>
+
   <script>
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d", { alpha: true });
@@ -124,12 +175,12 @@
     const menuBtn = document.getElementById("menuBtn");
     const docUrlInput = document.getElementById("docUrl");
     const status = document.getElementById("status");
+    const chat = document.getElementById("chat");
+    const messages = document.getElementById("messages");
+    const question = document.getElementById("question");
 
     // === Menú hamburguesa ===
-    menuBtn.addEventListener("click", () => {
-      menu.classList.toggle("open");
-      menuBtn.classList.toggle("active");
-    });
+    menuBtn.addEventListener("click", () => menu.classList.toggle("open"));
 
     // === Color control ===
     let mainColor = colorPicker.value;
@@ -166,23 +217,58 @@
       if (!url) return;
       status.textContent = "Cargando documento...";
       try {
-        // Usamos un proxy público para evitar CORS
         const proxy = "https://api.allorigins.win/get?url=" + encodeURIComponent(url);
         const res = await fetch(proxy);
         const data = await res.json();
         const html = data.contents;
 
-        // Extraer texto legible
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, "text/html");
         documentoCargado = doc.body.innerText.replace(/\s+/g, " ").trim();
 
-        status.textContent = "✅ Documento cargado correctamente (" + documentoCargado.slice(0, 40) + "...)";
+        status.textContent = "✅ Documento cargado correctamente.";
+        chat.style.display = "flex"; // mostrar chat
       } catch (err) {
         console.error(err);
-        status.textContent = "⚠️ Error al leer el documento";
+        status.textContent = "⚠️ Error al leer el documento.";
       }
     });
+
+    // === Chat ===
+    question.addEventListener("keypress", e => {
+      if (e.key === "Enter" && question.value.trim()) {
+        const query = question.value.trim();
+        addMessage(query, "user");
+        question.value = "";
+        medusaRespond(query);
+      }
+    });
+
+    function addMessage(text, sender) {
+      const div = document.createElement("div");
+      div.className = `msg ${sender}`;
+      div.textContent = text;
+      messages.appendChild(div);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    function medusaRespond(query) {
+      if (!documentoCargado) {
+        addMessage("⚠️ Cargá primero un documento.", "bot");
+        return;
+      }
+      const lower = query.toLowerCase();
+      const frases = documentoCargado.split(/[.!?]/).filter(s => s.trim().length > 40);
+      const halladas = frases.filter(s => s.toLowerCase().includes(lower));
+      let respuesta = "";
+      if (halladas.length > 0) {
+        respuesta = halladas.slice(0, 2).join(". ") + ".";
+      } else {
+        respuesta = "🤔 No encontré nada exacto sobre eso en el documento.";
+      }
+      addMessage(respuesta, "bot");
+      pulse = 6; // iluminar medusa al responder
+    }
 
     // === Canvas y animación ===
     function resizeCanvas() {
@@ -261,6 +347,7 @@
     }
 
     const tentacles = Array.from({ length: 65 }, (_, i) => new Tentacle(core, (i / 65) * Math.PI * 2));
+    let pulse = 0;
 
     function animate(t) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -272,7 +359,8 @@
       }
 
       const timeSinceMove = Date.now() - lastMove;
-      const flicker = Math.random() * 0.6;
+      const flicker = Math.random() * 0.6 + pulse * 0.3;
+      pulse = Math.max(pulse - 0.05, 0);
 
       const targetX = pointer.x + Math.sin(t * 0.001) * 100 * Math.min(timeSinceMove / 2000, 1);
       const targetY = pointer.y + Math.cos(t * 0.0013) * 80 * Math.min(timeSinceMove / 2000, 1);
