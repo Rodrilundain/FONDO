@@ -6,6 +6,10 @@ const userInput = document.getElementById("userInput");
 let mainColor = "#7dcaff";
 let pulse = 0;
 
+// --------------- CONFIGURACIÓN ---------------
+const SOURCE_URL = "https://novedadesfiancarcom.wordpress.com/estandarizacion-de-los-procesos/";
+// ---------------------------------------------
+
 function hexToRgb(hex) {
   const bigint = parseInt(hex.slice(1), 16);
   const r = (bigint >> 16) & 255;
@@ -124,7 +128,7 @@ function animate(t) {
 }
 requestAnimationFrame(animate);
 
-// Chat -------------------------------------------------------------------
+// ----------- Chat Lógico ------------------
 
 userInput.addEventListener("keydown", e => {
   if (e.key === "Enter" && userInput.value.trim()) {
@@ -143,30 +147,39 @@ function addMessage(text, sender) {
   messages.scrollTop = messages.scrollHeight;
 }
 
-async function getMedusaResponse(userText) {
+async function getMedusaResponse(query) {
   pulse = 6;
-  addMessage("💭 Medusa está pensando...", "bot");
-
-  const BACKEND_URL = "https://TU-BACKEND.onrender.com/chat"; // 🔧 reemplazá por tu backend real
+  addMessage("💭 Buscando información en los procesos...", "bot");
 
   try {
-    const response = await fetch(BACKEND_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: userText })
-    });
+    const res = await fetch(SOURCE_URL);
+    const html = await res.text();
 
-    // Si el backend responde con JSON válido
-    const data = await response.json();
-    document.querySelector(".msg.bot:last-child").textContent = data.reply || "🪼 ...";
-    if (data.color) mainColor = data.color;
+    // Convertimos HTML en texto plano
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+    const text = doc.body.innerText.replace(/\s+/g, " ").trim();
+
+    // Buscamos coincidencias simples
+    const lower = query.toLowerCase();
+    const sentences = text.split(/[.!?]/).filter(s => s.trim().length > 40);
+    const found = sentences.filter(s => s.toLowerCase().includes(lower));
+
+    let reply = "";
+    if (found.length > 0) {
+      reply = found.slice(0, 3).join(". ") + ".";
+      mainColor = "#8aff8a"; // verde si encuentra info
+    } else {
+      reply = "No encontré información específica sobre eso en los procesos estandarizados.";
+      mainColor = "#ff8080"; // rojo tenue si no hay coincidencias
+    }
+
+    document.querySelector(".msg.bot:last-child").textContent = reply;
     pulse = 6;
   } catch (error) {
-    // Fallback local si no hay conexión
-    console.warn("⚡ Error conectando con el backend:", error);
+    console.error("Error al acceder al sitio:", error);
     document.querySelector(".msg.bot:last-child").textContent =
-      "🌊 (modo offline) La corriente se interrumpió, pero sigo contigo ⚡";
-    mainColor = "#ffcc00"; // color cálido en modo sin conexión
-    pulse = 6;
+      "⚡ Hubo un problema accediendo al sitio. Revisá tu conexión.";
+    mainColor = "#ffaa00";
   }
 }
