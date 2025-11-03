@@ -167,6 +167,8 @@
   </div>
 
   <script>
+    const BACKEND_URL = "https://TU_DOMINIO/ask"; // 🔧 Cambiá esto por tu endpoint real
+
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d", { alpha: true });
     const colorPicker = document.getElementById("color");
@@ -179,14 +181,12 @@
     const messages = document.getElementById("messages");
     const question = document.getElementById("question");
 
-    // === Menú hamburguesa ===
     menuBtn.addEventListener("click", () => menu.classList.toggle("open"));
 
     // === Color control ===
     let mainColor = colorPicker.value;
     let autoHue = 200;
     let autoMode = false;
-
     colorPicker.addEventListener("input", e => mainColor = e.target.value);
     autoColor.addEventListener("change", e => autoMode = e.target.checked);
 
@@ -227,7 +227,7 @@
         documentoCargado = doc.body.innerText.replace(/\s+/g, " ").trim();
 
         status.textContent = "✅ Documento cargado correctamente.";
-        chat.style.display = "flex"; // mostrar chat
+        chat.style.display = "flex";
       } catch (err) {
         console.error(err);
         status.textContent = "⚠️ Error al leer el documento.";
@@ -252,22 +252,28 @@
       messages.scrollTop = messages.scrollHeight;
     }
 
-    function medusaRespond(query) {
+    async function medusaRespond(query) {
       if (!documentoCargado) {
         addMessage("⚠️ Cargá primero un documento.", "bot");
         return;
       }
-      const lower = query.toLowerCase();
-      const frases = documentoCargado.split(/[.!?]/).filter(s => s.trim().length > 40);
-      const halladas = frases.filter(s => s.toLowerCase().includes(lower));
-      let respuesta = "";
-      if (halladas.length > 0) {
-        respuesta = halladas.slice(0, 2).join(". ") + ".";
-      } else {
-        respuesta = "🤔 No encontré nada exacto sobre eso en el documento.";
+      addMessage("💭 Pensando...", "bot");
+      try {
+        const res = await fetch(BACKEND_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            context: documentoCargado.slice(0, 8000),
+            question: query
+          })
+        });
+        const data = await res.json();
+        messages.lastChild.textContent = data.reply || "⚡ No obtuve respuesta.";
+        pulse = 6;
+      } catch (err) {
+        console.error(err);
+        messages.lastChild.textContent = "⚠️ Error al conectar con ChatGPT.";
       }
-      addMessage(respuesta, "bot");
-      pulse = 6; // iluminar medusa al responder
     }
 
     // === Canvas y animación ===
