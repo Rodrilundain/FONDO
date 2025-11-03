@@ -1,194 +1,163 @@
-// Interactive Tentacle / Medusa que sigue el mouse
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d', { alpha: true });
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d", { alpha: true });
+const messages = document.getElementById("messages");
+const userInput = document.getElementById("userInput");
+
+let mainColor = "#7dcaff";
+let pulse = 0;
+
+function hexToRgb(hex) {
+  const bigint = parseInt(hex.slice(1), 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+  return { r, g, b };
+}
 
 function resizeCanvas() {
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = Math.floor(rect.width * devicePixelRatio);
-  canvas.height = Math.floor(rect.height * devicePixelRatio);
+  canvas.width = window.innerWidth * devicePixelRatio;
+  canvas.height = window.innerHeight * devicePixelRatio;
   ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
 }
-window.addEventListener('resize', resizeCanvas);
+window.addEventListener("resize", resizeCanvas);
 resizeCanvas();
 
-// Mouse / touch state
-const pointer = { x: canvas.width/2, y: canvas.height/2, isDown:false };
+const pointer = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+const core = { x: pointer.x, y: pointer.y, vx: 0, vy: 0, radius: 30 };
+let lastMove = Date.now();
 
-// core (la "cabeza" de la medusa)
-const core = { x: canvas.width/2 / devicePixelRatio, y: canvas.height/2 / devicePixelRatio, radius: 18 };
-
-canvas.addEventListener('mousemove', (e) => {
-  const r = canvas.getBoundingClientRect();
-  pointer.x = (e.clientX - r.left);
-  pointer.y = (e.clientY - r.top);
-});
-canvas.addEventListener('touchmove', (e) => {
+window.addEventListener("mousemove", e => updatePointer(e.clientX, e.clientY));
+window.addEventListener("touchmove", e => {
   e.preventDefault();
-  const r = canvas.getBoundingClientRect();
   const t = e.touches[0];
-  pointer.x = (t.clientX - r.left);
-  pointer.y = (t.clientY - r.top);
+  updatePointer(t.clientX, t.clientY);
 }, { passive: false });
 
-canvas.addEventListener('mousedown', () => pointer.isDown = true);
-canvas.addEventListener('mouseup', () => pointer.isDown = false);
-canvas.addEventListener('touchstart', () => pointer.isDown = true, { passive: true });
-canvas.addEventListener('touchend', () => pointer.isDown = false);
+function updatePointer(x, y) {
+  pointer.x = x;
+  pointer.y = y;
+  lastMove = Date.now();
+}
 
-// Tentacle class
 class Tentacle {
-  constructor(core, angle, options = {}) {
-    this.core = core;
-    this.angle = angle;
-    this.length = options.length || 28;         // número de segmentos
-    this.segmentLength = options.segmentLength || 10;
+  constructor(core, angle) {
+    this.core = core; this.angle = angle;
+    this.length = 100 + Math.random() * 80;
     this.segments = [];
     this.noise = Math.random() * 100;
     this.phase = Math.random() * Math.PI * 2;
-
-    for (let i = 0; i < this.length; i++) {
-      this.segments.push({
-        x: core.x,
-        y: core.y,
-        offset: i * 0.25 + Math.random() * 0.6
-      });
-    }
+    const segCount = Math.floor(this.length / 10);
+    for (let i = 0; i < segCount; i++) this.segments.push({ x: core.x, y: core.y });
   }
-
-  update(targetX, targetY, t) {
-    // El primer objetivo está cerca del core pero ligeramente hacia el ángulo base.
-    const baseAngle = this.angle;
-    // target blend: mezcla entre mouse y base direction
-    const dirX = Math.cos(baseAngle) * 50;
-    const dirY = Math.sin(baseAngle) * 50;
-
-    const aimX = targetX * 0.9 + (this.core.x + dirX) * 0.1;
-    const aimY = targetY * 0.9 + (this.core.y + dirY) * 0.1;
-
-    // actualizar primer segmento hacia aim con algo de ruido/sinusoide
-    let prevX = this.core.x;
-    let prevY = this.core.y;
+  update(t) {
+    const baseAngle = this.angle + Math.sin(t * 0.001 + this.phase) * 0.3;
+    const dirX = Math.cos(baseAngle) * 180;
+    const dirY = Math.sin(baseAngle) * 180;
+    let prevX = this.core.x, prevY = this.core.y;
+    const segLen = 10;
     for (let i = 0; i < this.segments.length; i++) {
       const seg = this.segments[i];
-
-      // objetivo para este segmento: una interpolación hacia aim, con ondas
       const pct = i / this.segments.length;
-      const wave = Math.sin((t * 0.003 + this.noise + i * 0.15) + this.phase) * (8 + 20 * (1 - pct));
-      const targetSegX = aimX + Math.cos(baseAngle + Math.PI/2) * wave * (0.6 + pct * 1.2);
-      const targetSegY = aimY + Math.sin(baseAngle + Math.PI/2) * wave * (0.6 + pct * 1.2);
-
-      // follow previous segment smoothly
-      const dx = targetSegX - seg.x;
-      const dy = targetSegY - seg.y;
+      const wave = Math.sin(t * 0.004 + this.noise + i * 0.3) * 60 * (1 - pct);
+      const swayAngle = baseAngle + Math.PI / 2;
+      const targetX = this.core.x + dirX * pct + wave * Math.cos(swayAngle);
+      const targetY = this.core.y + dirY * pct + wave * Math.sin(swayAngle);
+      const dx = targetX - prevX, dy = targetY - prevY;
       const dist = Math.hypot(dx, dy) || 1;
-      const desired = this.segmentLength;
-      const ratio = desired / dist;
-
-      // move the segment towards the target but keep distance stable
-      seg.x = targetSegX - dx * (1 - 0.12) * 0.9;
-      seg.y = targetSegY - dy * (1 - 0.12) * 0.9;
-
-      // further enforce linkage with prev segment for smooth chain
-      const linkDx = seg.x - prevX;
-      const linkDy = seg.y - prevY;
-      const linkDist = Math.hypot(linkDx, linkDy) || 1;
-      const linkRatio = (this.segmentLength / linkDist);
-      seg.x = prevX + linkDx * linkRatio;
-      seg.y = prevY + linkDy * linkRatio;
-
-      prevX = seg.x;
-      prevY = seg.y;
+      const ratio = segLen / dist;
+      seg.x = prevX + dx * ratio;
+      seg.y = prevY + dy * ratio;
+      prevX = seg.x; prevY = seg.y;
     }
   }
-
-  draw(ctx) {
-    // stroke path with gradient-like style
-    ctx.lineWidth = 2.2;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    // glow
+  draw(ctx, flicker) {
+    const { r, g, b } = hexToRgb(mainColor);
+    const grad = ctx.createLinearGradient(this.core.x, this.core.y, this.segments.at(-1).x, this.segments.at(-1).y);
+    grad.addColorStop(0, `rgba(${r},${g},${b},${0.8 + flicker * 0.2})`);
+    grad.addColorStop(1, `rgba(${r * 0.4},${g * 0.4},${b * 0.4},${0.3 + flicker * 0.2})`);
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-
-    // primary stroke
-    ctx.beginPath();
-    for (let i = 0; i < this.segments.length; i++) {
-      const p = this.segments[i];
-      if (i === 0) ctx.moveTo(this.core.x, this.core.y);
-      ctx.lineTo(p.x, p.y);
-    }
-    ctx.strokeStyle = 'rgba(80,170,255,0.18)';
-    ctx.stroke();
-
-    // main line
-    ctx.beginPath();
-    for (let i = 0; i < this.segments.length; i++) {
-      const p = this.segments[i];
-      if (i === 0) ctx.moveTo(this.core.x, this.core.y);
-      ctx.lineTo(p.x, p.y);
-    }
-    // gradient along the first segment using alpha per segment
-    for (let i = 0; i < 2; i++) {
-      ctx.strokeStyle = `rgba(120,200,255,${0.18 + i*0.2})`;
-      ctx.lineWidth = 1.6 - i*0.6;
-      ctx.stroke();
-    }
-
-    ctx.restore();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.beginPath(); ctx.moveTo(this.core.x, this.core.y);
+    for (const p of this.segments) ctx.lineTo(p.x, p.y);
+    ctx.strokeStyle = grad; ctx.lineWidth = 2 + flicker * 2;
+    ctx.shadowBlur = 25 + flicker * 45;
+    ctx.shadowColor = `rgba(${r},${g},${b},0.7)`;
+    ctx.stroke(); ctx.restore();
   }
 }
 
-// Generar varios tentáculos con ángulos en abanico
-const tentacles = [];
-const total = 25;
-for (let i = 0; i < total; i++) {
-  const angle = -Math.PI/2 + (i - (total-1)/2) * (Math.PI / (total*1.4));
-  tentacles.push(new Tentacle(core, angle, { length: 30, segmentLength: 10 }));
-}
+const tentacles = Array.from({ length: 65 }, (_, i) => new Tentacle(core, (i / 65) * Math.PI * 2));
 
-// anim loop
-let last = performance.now();
 function animate(t) {
-  const now = t || performance.now();
-  const dt = now - last;
-  last = now;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const timeSinceMove = Date.now() - lastMove;
+  const flicker = Math.random() * 0.6;
+  const targetX = pointer.x + Math.sin(t * 0.001) * 100 * Math.min(timeSinceMove / 2000, 1);
+  const targetY = pointer.y + Math.cos(t * 0.0013) * 80 * Math.min(timeSinceMove / 2000, 1);
+  const ax = (targetX - core.x) * 0.01;
+  const ay = (targetY - core.y) * 0.01;
+  core.vx += ax; core.vy += ay;
+  core.vx *= 0.95; core.vy *= 0.95;
+  core.x += core.vx; core.y += core.vy;
 
-  // clear
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const { r, g, b } = hexToRgb(mainColor);
+  const intensity = 1 + Math.sin(pulse) * 0.5;
 
-  // update core position — suavizado hacia pointer
-  const r = 0.08;
-  core.x += (pointer.x - core.x) * r;
-  core.y += (pointer.y - core.y) * r;
-
-  // optional pulsation
-  const pulse = 1 + Math.sin(now * 0.005) * 0.06;
-
-  // draw core glow
   ctx.save();
-  ctx.beginPath();
-  const g = ctx.createRadialGradient(core.x, core.y, 0, core.x, core.y, 60);
-  g.addColorStop(0, 'rgba(130,210,255,0.95)');
-  g.addColorStop(0.25, 'rgba(80,170,255,0.18)');
-  g.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = g;
-  ctx.arc(core.x, core.y, core.radius * pulse * 3.4, 0, Math.PI*2);
-  ctx.fill();
-
-  // draw core circle
-  ctx.beginPath();
-  ctx.fillStyle = 'rgba(120,200,255,0.98)';
-  ctx.arc(core.x, core.y, core.radius * pulse, 0, Math.PI*2);
+  const gGlow = ctx.createRadialGradient(core.x, core.y, 0, core.x, core.y, 150);
+  gGlow.addColorStop(0, `rgba(${r},${g},${b},${0.9 * intensity})`);
+  gGlow.addColorStop(0.3, `rgba(${r * 0.7},${g * 0.7},${b * 0.7},${0.3 * intensity})`);
+  gGlow.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = gGlow;
+  ctx.beginPath(); ctx.arc(core.x, core.y, core.radius * (3.5 + flicker * 0.8), 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
-  // update & draw tentacles
-  for (const tacle of tentacles) {
-    tacle.update(core.x + (pointer.x - core.x) * 0.6, core.y + (pointer.y - core.y) * 0.6, now);
-    tacle.draw(ctx);
-  }
+  ctx.beginPath();
+  ctx.fillStyle = `rgba(${r},${g},${b},${0.9 * intensity})`;
+  ctx.arc(core.x, core.y, core.radius * (1.1 + flicker * 0.1), 0, Math.PI * 2);
+  ctx.fill();
 
+  tentacles.forEach(tacle => { tacle.update(t); tacle.draw(ctx, flicker); });
+  pulse *= 0.95;
   requestAnimationFrame(animate);
 }
 requestAnimationFrame(animate);
+
+userInput.addEventListener("keydown", e => {
+  if (e.key === "Enter" && userInput.value.trim()) {
+    const text = userInput.value.trim();
+    addMessage(text, "user");
+    userInput.value = "";
+    getMedusaResponse(text);
+  }
+});
+
+function addMessage(text, sender) {
+  const msg = document.createElement("div");
+  msg.classList.add("msg", sender);
+  msg.textContent = text;
+  messages.appendChild(msg);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+async function getMedusaResponse(userText) {
+  pulse = 6;
+  addMessage("💭 Medusa está pensando...", "bot");
+
+  try {
+    const response = await fetch("https://TU-BACKEND.onrender.com/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: userText })
+    });
+
+    const data = await response.json();
+    document.querySelector(".msg.bot:last-child").textContent = data.reply;
+    if (data.color) mainColor = data.color;
+    pulse = 6;
+  } catch (error) {
+    document.querySelector(".msg.bot:last-child").textContent =
+      "⚡ Se cortó la corriente. Intentá de nuevo.";
+  }
+}
