@@ -152,7 +152,9 @@ async function getMedusaResponse(query) {
   addMessage("💭 Analizando información de procesos...", "bot");
 
   try {
-    const res = await fetch(SOURCE_URL);
+    cconst proxyUrl = "https://api.allorigins.win/raw?url=" + encodeURIComponent(SOURCE_URL);
+const res = await fetch(proxyUrl);
+
     const html = await res.text();
 
     const parser = new DOMParser();
