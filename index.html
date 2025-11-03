@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Pulpo Interactivo con Meta AI</title>
+  <title>Medusa GPT Emocional</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
@@ -17,24 +17,11 @@
       width: 100vw; height: 100vh;
       display: block; cursor: none;
     }
-    .color-picker {
-      position: absolute; top: 15px; right: 15px; z-index: 5;
-      display: flex; align-items: center; gap: 8px;
-      background: rgba(0,0,0,0.4);
-      padding: 8px 12px; border-radius: 12px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.5);
-    }
-    .color-picker label { color: #9cdcff; font-size: 0.9em; }
-    .color-picker input[type="color"] {
-      width: 36px; height: 36px; border: none; border-radius: 50%;
-      cursor: pointer; background: transparent;
-    }
-
     .chat-box {
       position: absolute;
       bottom: 20px; left: 50%;
       transform: translateX(-50%);
-      background: rgba(0, 0, 0, 0.6);
+      background: rgba(0,0,0,0.6);
       padding: 16px; border-radius: 12px;
       width: 320px; display: flex; flex-direction: column;
       z-index: 10; backdrop-filter: blur(6px);
@@ -46,50 +33,29 @@
     .msg { margin: 6px 0; line-height: 1.3; }
     .msg.user { text-align: right; color: #9cdcff; }
     .msg.bot { text-align: left; color: #b3ffb8; }
-
     input[type="text"] {
       width: 100%; padding: 8px 10px;
       border-radius: 8px; border: none; outline: none;
       background: #0b1524; color: #fff; font-size: 0.9em;
     }
-
-    .wa-button {
-      margin-top: 10px;
-      background: #25D366; color: white;
-      border: none; padding: 10px 16px;
-      border-radius: 8px; font-weight: bold;
-      cursor: pointer; font-size: 0.9em;
-      text-decoration: none; text-align: center;
-      transition: background 0.2s ease;
-    }
-    .wa-button:hover { background: #1ebd5a; }
   </style>
 </head>
 <body>
   <canvas id="canvas"></canvas>
 
-  <div class="color-picker">
-    <label for="color">Color:</label>
-    <input type="color" id="color" value="#7dcaff" />
-  </div>
-
   <div class="chat-box">
     <div class="messages" id="messages"></div>
-    <input type="text" id="userInput" placeholder="Escribe algo para Meta AI..." />
-    <a href="https://wa.me/13135550002?s=5" target="_blank" class="wa-button">💬 Abrir chat real con Meta AI</a>
+    <input type="text" id="userInput" placeholder="Escribe algo para la medusa..." />
   </div>
 
   <script>
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d", { alpha: true });
-    const colorPicker = document.getElementById("color");
     const messages = document.getElementById("messages");
     const userInput = document.getElementById("userInput");
 
-    let mainColor = colorPicker.value;
+    let mainColor = "#7dcaff";
     let pulse = 0;
-
-    colorPicker.addEventListener("input", e => mainColor = e.target.value);
 
     function hexToRgb(hex) {
       const bigint = parseInt(hex.slice(1), 16);
@@ -108,17 +74,20 @@
     resizeCanvas();
 
     const pointer = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-    const core = { x: window.innerWidth / 2, y: window.innerHeight / 2, vx: 0, vy: 0, radius: 30 };
+    const core = { x: pointer.x, y: pointer.y, vx: 0, vy: 0, radius: 30 };
     let lastMove = Date.now();
 
     window.addEventListener("mousemove", e => updatePointer(e.clientX, e.clientY));
     window.addEventListener("touchmove", e => {
-      e.preventDefault(); const t = e.touches[0];
+      e.preventDefault();
+      const t = e.touches[0];
       updatePointer(t.clientX, t.clientY);
     }, { passive: false });
 
     function updatePointer(x, y) {
-      pointer.x = x; pointer.y = y; lastMove = Date.now();
+      pointer.x = x;
+      pointer.y = y;
+      lastMove = Date.now();
     }
 
     class Tentacle {
@@ -201,19 +170,17 @@
       ctx.fill();
 
       tentacles.forEach(tacle => { tacle.update(t); tacle.draw(ctx, flicker); });
-
       pulse *= 0.95;
       requestAnimationFrame(animate);
     }
     requestAnimationFrame(animate);
 
-    // Chat simulado
     userInput.addEventListener("keydown", e => {
       if (e.key === "Enter" && userInput.value.trim()) {
         const text = userInput.value.trim();
         addMessage(text, "user");
         userInput.value = "";
-        simulateBotResponse(text);
+        getMedusaResponse(text);
       }
     });
 
@@ -225,20 +192,25 @@
       messages.scrollTop = messages.scrollHeight;
     }
 
-    function simulateBotResponse(userText) {
+    async function getMedusaResponse(userText) {
       pulse = 6;
-      setTimeout(() => {
-        const responses = [
-          "Meta AI está pensando...",
-          "Esa pregunta me gusta 🧠",
-          "Podrías escribirme también en WhatsApp 😉",
-          "La medusa brilla cuando pensás 🤍",
-          "Siento energía en tus palabras ⚡"
-        ];
-        const response = responses[Math.floor(Math.random() * responses.length)];
-        addMessage(response, "bot");
+      addMessage("💭 Medusa está pensando...", "bot");
+
+      try {
+        const response = await fetch("https://TU-BACKEND.onrender.com/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: userText })
+        });
+
+        const data = await response.json();
+        document.querySelector(".msg.bot:last-child").textContent = data.reply;
+        mainColor = data.color || mainColor;
         pulse = 6;
-      }, 1200 + Math.random() * 600);
+      } catch (error) {
+        document.querySelector(".msg.bot:last-child").textContent =
+          "⚡ Se cortó la corriente. Intentá de nuevo.";
+      }
     }
   </script>
 </body>
