@@ -6,9 +6,9 @@ const userInput = document.getElementById("userInput");
 let mainColor = "#7dcaff";
 let pulse = 0;
 
-// --------------- CONFIGURACIÓN ---------------
+// Configuración
 const SOURCE_URL = "https://novedadesfiancarcom.wordpress.com/estandarizacion-de-los-procesos/";
-// ---------------------------------------------
+const BACKEND_URL = "https://TU-BACKEND.onrender.com/chat"; // Reemplazá por tu backend real (Render/Railway)
 
 function hexToRgb(hex) {
   const bigint = parseInt(hex.slice(1), 16);
@@ -18,6 +18,7 @@ function hexToRgb(hex) {
   return { r, g, b };
 }
 
+// === Canvas ===
 function resizeCanvas() {
   canvas.width = window.innerWidth * devicePixelRatio;
   canvas.height = window.innerHeight * devicePixelRatio;
@@ -128,8 +129,7 @@ function animate(t) {
 }
 requestAnimationFrame(animate);
 
-// ----------- Chat Lógico ------------------
-
+// === Chat ===
 userInput.addEventListener("keydown", e => {
   if (e.key === "Enter" && userInput.value.trim()) {
     const text = userInput.value.trim();
@@ -149,37 +149,45 @@ function addMessage(text, sender) {
 
 async function getMedusaResponse(query) {
   pulse = 6;
-  addMessage("💭 Buscando información en los procesos...", "bot");
+  addMessage("💭 Analizando información de procesos...", "bot");
 
   try {
     const res = await fetch(SOURCE_URL);
     const html = await res.text();
 
-    // Convertimos HTML en texto plano
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, "text/html");
     const text = doc.body.innerText.replace(/\s+/g, " ").trim();
 
-    // Buscamos coincidencias simples
     const lower = query.toLowerCase();
     const sentences = text.split(/[.!?]/).filter(s => s.trim().length > 40);
     const found = sentences.filter(s => s.toLowerCase().includes(lower));
 
-    let reply = "";
     if (found.length > 0) {
-      reply = found.slice(0, 3).join(". ") + ".";
-      mainColor = "#8aff8a"; // verde si encuentra info
+      const reply = found.slice(0, 3).join(". ") + ".";
+      document.querySelector(".msg.bot:last-child").textContent = reply;
+      mainColor = "#7eff8b"; // verde claro si encuentra info
+      pulse = 6;
     } else {
-      reply = "No encontré información específica sobre eso en los procesos estandarizados.";
-      mainColor = "#ff8080"; // rojo tenue si no hay coincidencias
-    }
+      document.querySelector(".msg.bot:last-child").textContent = "🔎 No encontré información exacta, consultando al sistema central...";
+      mainColor = "#ffd166";
+      pulse = 6;
 
-    document.querySelector(".msg.bot:last-child").textContent = reply;
-    pulse = 6;
-  } catch (error) {
-    console.error("Error al acceder al sitio:", error);
-    document.querySelector(".msg.bot:last-child").textContent =
-      "⚡ Hubo un problema accediendo al sitio. Revisá tu conexión.";
-    mainColor = "#ffaa00";
+      // Fallback a ChatGPT
+      const gptRes = await fetch(BACKEND_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: query })
+      });
+
+      const data = await gptRes.json();
+      document.querySelector(".msg.bot:last-child").textContent = data.reply || "⚡ No obtuve respuesta del servidor.";
+      mainColor = data.color || "#7dcaff";
+      pulse = 6;
+    }
+  } catch (err) {
+    console.error("Error:", err);
+    document.querySelector(".msg.bot:last-child").textContent = "⚡ Error accediendo a los datos. Revisá tu conexión.";
+    mainColor = "#ff8080";
   }
 }
