@@ -38,8 +38,8 @@
     .menu {
       position: absolute;
       top: 55px; right: 15px;
-      width: 250px;
-      background: rgba(0,0,0,0.8);
+      width: 260px;
+      background: rgba(0,0,0,0.85);
       border: 1px solid rgba(255,255,255,0.1);
       border-radius: 12px;
       box-shadow: 0 8px 20px rgba(0,0,0,0.6);
@@ -81,6 +81,12 @@
       font-size: 0.8em;
       outline: none;
     }
+    .status {
+      font-size: 0.8em;
+      margin-top: 4px;
+      color: #9cdcff;
+      opacity: 0.8;
+    }
   </style>
 </head>
 <body>
@@ -105,6 +111,7 @@
     <div class="url-box">
       <label for="docUrl">🗂️ URL documento</label>
       <input type="text" id="docUrl" placeholder="https://ejemplo.com/documento">
+      <div class="status" id="status">Sin documento cargado</div>
     </div>
   </div>
 
@@ -115,25 +122,22 @@
     const autoColor = document.getElementById("autoColor");
     const menu = document.getElementById("menu");
     const menuBtn = document.getElementById("menuBtn");
+    const docUrlInput = document.getElementById("docUrl");
+    const status = document.getElementById("status");
 
-    // Toggle menú
+    // === Menú hamburguesa ===
     menuBtn.addEventListener("click", () => {
       menu.classList.toggle("open");
       menuBtn.classList.toggle("active");
     });
 
-    // Color dinámico
+    // === Color control ===
     let mainColor = colorPicker.value;
     let autoHue = 200;
     let autoMode = false;
 
-    colorPicker.addEventListener("input", (e) => {
-      mainColor = e.target.value;
-    });
-
-    autoColor.addEventListener("change", (e) => {
-      autoMode = e.target.checked;
-    });
+    colorPicker.addEventListener("input", e => mainColor = e.target.value);
+    autoColor.addEventListener("change", e => autoMode = e.target.checked);
 
     function hslToHex(h, s, l) {
       s /= 100; l /= 100;
@@ -144,10 +148,8 @@
         return Math.round(255 * color);
       };
       return "#" + [f(0), f(8), f(4)]
-        .map(x => x.toString(16).padStart(2, "0"))
-        .join("");
+        .map(x => x.toString(16).padStart(2, "0")).join("");
     }
-
     function hexToRgb(hex) {
       const bigint = parseInt(hex.slice(1), 16);
       const r = (bigint >> 16) & 255;
@@ -156,6 +158,33 @@
       return { r, g, b };
     }
 
+    // === Documento remoto ===
+    let documentoCargado = "";
+
+    docUrlInput.addEventListener("change", async () => {
+      const url = docUrlInput.value.trim();
+      if (!url) return;
+      status.textContent = "Cargando documento...";
+      try {
+        // Usamos un proxy público para evitar CORS
+        const proxy = "https://api.allorigins.win/get?url=" + encodeURIComponent(url);
+        const res = await fetch(proxy);
+        const data = await res.json();
+        const html = data.contents;
+
+        // Extraer texto legible
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, "text/html");
+        documentoCargado = doc.body.innerText.replace(/\s+/g, " ").trim();
+
+        status.textContent = "✅ Documento cargado correctamente (" + documentoCargado.slice(0, 40) + "...)";
+      } catch (err) {
+        console.error(err);
+        status.textContent = "⚠️ Error al leer el documento";
+      }
+    });
+
+    // === Canvas y animación ===
     function resizeCanvas() {
       canvas.width = window.innerWidth * devicePixelRatio;
       canvas.height = window.innerHeight * devicePixelRatio;
@@ -250,16 +279,12 @@
 
       const ax = (targetX - core.x) * 0.01;
       const ay = (targetY - core.y) * 0.01;
-      core.vx += ax;
-      core.vy += ay;
-      core.vx *= 0.95;
-      core.vy *= 0.95;
-      core.x += core.vx;
-      core.y += core.vy;
+      core.vx += ax; core.vy += ay;
+      core.vx *= 0.95; core.vy *= 0.95;
+      core.x += core.vx; core.y += core.vy;
 
       const { r, g, b } = hexToRgb(mainColor);
 
-      // Glow central
       ctx.save();
       const gGlow = ctx.createRadialGradient(core.x, core.y, 0, core.x, core.y, 150);
       gGlow.addColorStop(0, `rgba(${r},${g},${b},${0.9 + flicker * 0.2})`);
@@ -271,7 +296,6 @@
       ctx.fill();
       ctx.restore();
 
-      // Núcleo
       ctx.beginPath();
       ctx.fillStyle = `rgba(${r},${g},${b},${0.9 + flicker * 0.2})`;
       ctx.arc(core.x, core.y, core.radius * (1.1 + flicker * 0.1), 0, Math.PI * 2);
