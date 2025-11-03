@@ -3,254 +3,228 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Pulpo Interactivo</title>
+  <title>Medusa con Barra de Color (HUE)</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
-      width: 100%;
-      height: 100%;
+      width: 100%; height: 100%;
       overflow: hidden;
       background: radial-gradient(circle at center, #030712 0%, #000 90%);
-      font-family: "Inter", sans-serif;
-      color: #7dcaff;
-      user-select: none;
-      touch-action: none;
-    }
-    h1 {
-      position: absolute;
-      top: 10px;
-      left: 50%;
-      transform: translateX(-50%);
-      color: #7dcaff;
-      text-shadow: 0 0 8px rgba(0,180,255,0.4);
-      font-weight: 400;
-      font-size: 1em;
-      letter-spacing: 0.08em;
-      z-index: 2;
+      font-family: "Inter", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      color: #7dcaff; user-select: none; touch-action: none;
     }
     canvas {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      display: block;
-      cursor: none;
+      position: fixed; inset: 0;
+      width: 100vw; height: 100vh; display: block; cursor: none;
     }
-    .color-picker {
+
+    /* === Barra HUE (gradiente horizontal) === */
+    .toolbar {
       position: absolute;
-      top: 15px;
-      right: 15px;
-      z-index: 5;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: rgba(0,0,0,0.4);
-      padding: 8px 12px;
-      border-radius: 12px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+      left: 50%; transform: translateX(-50%);
+      bottom: 18px; z-index: 10;
+      background: rgba(0,0,0,.45);
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 14px; padding: 10px 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.04);
+      display: flex; align-items: center; gap: 12px;
+      backdrop-filter: blur(6px);
     }
-    .color-picker label {
-      color: #9cdcff;
-      font-size: 0.9em;
+    .hue-wrap {
+      position: relative; width: 320px; height: 14px; border-radius: 999px; overflow: hidden;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
     }
-    .color-picker input[type="color"] {
-      width: 36px;
-      height: 36px;
-      border: none;
-      border-radius: 50%;
+    .hue-gradient {
+      position: absolute; inset: 0; border-radius: inherit;
+      background: linear-gradient(90deg,
+        #ff0000 0%,
+        #ffff00 17%,
+        #00ff00 33%,
+        #00ffff 50%,
+        #0000ff 67%,
+        #ff00ff 83%,
+        #ff0000 100%);
+      filter: saturate(120%);
+    }
+    .hue-input {
+      position: absolute; inset: -6px 0 0 0; width: 100%;
+      appearance: none; background: transparent; height: 26px; margin: 0; outline: none;
+    }
+    /* Estilo del thumb (marcador) */
+    .hue-input::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none;
+      width: 18px; height: 18px; border-radius: 50%;
+      background: #fff; border: 2px solid rgba(0,0,0,.6);
+      box-shadow: 0 0 0 2px rgba(255,255,255,.7), 0 2px 8px rgba(0,0,0,.5);
       cursor: pointer;
-      background: transparent;
+    }
+    .hue-input::-moz-range-thumb {
+      width: 18px; height: 18px; border-radius: 50%;
+      background: #fff; border: 2px solid rgba(0,0,0,.6);
+      box-shadow: 0 0 0 2px rgba(255,255,255,.7), 0 2px 8px rgba(0,0,0,.5);
+      cursor: pointer;
+    }
+    .chip {
+      width: 22px; height: 22px; border-radius: 6px;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.25), 0 1px 10px rgba(0,0,0,.5);
+    }
+    .label {
+      font-size: .85rem; color: #9cdcff; letter-spacing: .02em; opacity: .9;
     }
   </style>
 </head>
 <body>
-  
   <canvas id="canvas"></canvas>
 
-  <div class="color-picker">
-    <label for="color">Color:</label>
-    <input type="color" id="color" value="#7dcaff" />
+  <!-- Toolbar con barra HUE -->
+  <div class="toolbar">
+    <span class="label">Color</span>
+    <div class="hue-wrap">
+      <div class="hue-gradient"></div>
+      <input id="hue" class="hue-input" type="range" min="0" max="360" step="1" value="200" />
+    </div>
+    <div id="chip" class="chip"></div>
   </div>
 
   <script>
+    // ========= Setup canvas =========
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d", { alpha: true });
-    const colorPicker = document.getElementById("color");
-
-    // Color dinámico
-    let mainColor = colorPicker.value;
-
-    colorPicker.addEventListener("input", (e) => {
-      mainColor = e.target.value;
-    });
-
-    function hexToRgb(hex) {
-      const bigint = parseInt(hex.slice(1), 16);
-      const r = (bigint >> 16) & 255;
-      const g = (bigint >> 8) & 255;
-      const b = bigint & 255;
-      return { r, g, b };
-    }
-
     function resizeCanvas() {
-      canvas.width = window.innerWidth * devicePixelRatio;
-      canvas.height = window.innerHeight * devicePixelRatio;
+      canvas.width = innerWidth * devicePixelRatio;
+      canvas.height = innerHeight * devicePixelRatio;
       ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
     }
-    window.addEventListener("resize", resizeCanvas);
+    addEventListener("resize", resizeCanvas);
     resizeCanvas();
 
-    // --- Movimiento ---
-    const pointer = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-    const core = { 
-      x: window.innerWidth / 2, 
-      y: window.innerHeight / 2, 
-      vx: 0, 
-      vy: 0,
-      radius: 30
-    };
+    // ========= Color (HSL -> RGB) =========
+    const hueInput = document.getElementById("hue");
+    const chip = document.getElementById("chip");
 
+    // Mantengo saturación/ligereza "eléctricas"
+    const SAT = 90;   // %
+    const LIG = 60;   // %
+    let hue = Number(hueInput.value);
+
+    function hslToRgb(h, s, l) {
+      // h 0..360, s/l 0..100
+      s /= 100; l /= 100;
+      const k = n => (n + h / 30) % 12;
+      const a = s * Math.min(l, 1 - l);
+      const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+      return { r: Math.round(255 * f(0)), g: Math.round(255 * f(8)), b: Math.round(255 * f(4)) };
+    }
+    function currentRGB() {
+      return hslToRgb(hue, SAT, LIG);
+    }
+    function updateChip() {
+      chip.style.background = `hsl(${hue} ${SAT}% ${LIG}%)`;
+    }
+    hueInput.addEventListener("input", e => {
+      hue = Number(e.target.value);
+      updateChip();
+    });
+    updateChip();
+
+    // ========= Movimiento núcleo =========
+    const pointer = { x: innerWidth / 2, y: innerHeight / 2 };
+    const core = { x: innerWidth / 2, y: innerHeight / 2, vx: 0, vy: 0, radius: 30 };
     let lastMove = Date.now();
 
-    function updatePointer(x, y) {
-      pointer.x = x;
-      pointer.y = y;
-      lastMove = Date.now();
-    }
+    function updatePointer(x, y) { pointer.x = x; pointer.y = y; lastMove = Date.now(); }
+    addEventListener("mousemove", e => updatePointer(e.clientX, e.clientY), { passive: true });
+    addEventListener("touchmove", e => { const t = e.touches[0]; updatePointer(t.clientX, t.clientY); }, { passive: true });
 
-    window.addEventListener("mousemove", e => updatePointer(e.clientX, e.clientY));
-    window.addEventListener("touchmove", e => {
-      e.preventDefault();
-      const t = e.touches[0];
-      updatePointer(t.clientX, t.clientY);
-    }, { passive: false });
-
-    // --- Tentáculos ---
+    // ========= Tentáculos =========
     class Tentacle {
-      constructor(core, angle, options = {}) {
-        this.core = core;
-        this.angle = angle;
-        this.length = options.length || 100 + Math.random() * 80;
+      constructor(core, angle, length = 100 + Math.random() * 80) {
+        this.core = core; this.angle = angle; this.length = length;
         this.segments = [];
         this.noise = Math.random() * 100;
         this.phase = Math.random() * Math.PI * 2;
-
         const segCount = Math.floor(this.length / 10);
-        for (let i = 0; i < segCount; i++) {
-          this.segments.push({ x: core.x, y: core.y });
-        }
+        for (let i = 0; i < segCount; i++) this.segments.push({ x: core.x, y: core.y });
       }
-
       update(t) {
         const baseAngle = this.angle + Math.sin(t * 0.001 + this.phase) * 0.3;
         const dirX = Math.cos(baseAngle) * 180;
         const dirY = Math.sin(baseAngle) * 180;
-
-        let prevX = this.core.x;
-        let prevY = this.core.y;
+        let prevX = this.core.x, prevY = this.core.y;
         const segLen = 10;
-
         for (let i = 0; i < this.segments.length; i++) {
           const seg = this.segments[i];
           const pct = i / this.segments.length;
           const wave = Math.sin(t * 0.004 + this.noise + i * 0.3) * 60 * (1 - pct);
-          const swayAngle = baseAngle + Math.PI / 2;
-          const targetX = this.core.x + dirX * pct + wave * Math.cos(swayAngle);
-          const targetY = this.core.y + dirY * pct + wave * Math.sin(swayAngle);
-
-          const dx = targetX - prevX;
-          const dy = targetY - prevY;
+          const sway = baseAngle + Math.PI / 2;
+          const targetX = this.core.x + dirX * pct + wave * Math.cos(sway);
+          const targetY = this.core.y + dirY * pct + wave * Math.sin(sway);
+          const dx = targetX - prevX, dy = targetY - prevY;
           const dist = Math.hypot(dx, dy) || 1;
           const ratio = segLen / dist;
-
-          seg.x = prevX + dx * ratio;
-          seg.y = prevY + dy * ratio;
-
-          prevX = seg.x;
-          prevY = seg.y;
+          seg.x = prevX + dx * ratio; seg.y = prevY + dy * ratio;
+          prevX = seg.x; prevY = seg.y;
         }
       }
-
       draw(ctx, flicker) {
-        const { r, g, b } = hexToRgb(mainColor);
-        const grad = ctx.createLinearGradient(
-          this.core.x, this.core.y,
-          this.segments[this.segments.length - 1].x,
-          this.segments[this.segments.length - 1].y
-        );
-        grad.addColorStop(0, `rgba(${r},${g},${b},${0.8 + flicker * 0.2})`);
-        grad.addColorStop(1, `rgba(${r * 0.4},${g * 0.4},${b * 0.4},${0.3 + flicker * 0.2})`);
-
+        const { r, g, b } = currentRGB();
+        const tail = this.segments[this.segments.length - 1];
+        const grad = ctx.createLinearGradient(this.core.x, this.core.y, tail.x, tail.y);
+        grad.addColorStop(0, `rgba(${r},${g},${b},${0.85 + flicker * 0.15})`);
+        grad.addColorStop(1, `rgba(${Math.round(r*0.45)},${Math.round(g*0.45)},${Math.round(b*0.45)},${0.30 + flicker * 0.15})`);
         ctx.save();
         ctx.globalCompositeOperation = "lighter";
-        ctx.beginPath();
-        ctx.moveTo(this.core.x, this.core.y);
+        ctx.beginPath(); ctx.moveTo(this.core.x, this.core.y);
         for (const p of this.segments) ctx.lineTo(p.x, p.y);
         ctx.strokeStyle = grad;
         ctx.lineWidth = 2 + flicker * 2;
         ctx.shadowBlur = 25 + flicker * 45;
         ctx.shadowColor = `rgba(${r},${g},${b},0.7)`;
-        ctx.stroke();
-        ctx.restore();
+        ctx.stroke(); ctx.restore();
       }
     }
 
-    const tentacles = [];
-    const total = 65;
-    for (let i = 0; i < total; i++) {
-      const angle = (i / total) * Math.PI * 2;
-      tentacles.push(new Tentacle(core, angle));
-    }
+    const tentacles = Array.from({ length: 65 }, (_, i) => new Tentacle(core, (i / 65) * Math.PI * 2));
 
-    // --- Animación ---
+    // ========= Animación =========
     function animate(t) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const timeSinceMove = Date.now() - lastMove;
-      const flicker = Math.random() * 0.6;
-
-      const targetX = pointer.x + Math.sin(t * 0.001) * 100 * Math.min(timeSinceMove / 2000, 1);
-      const targetY = pointer.y + Math.cos(t * 0.0013) * 80 * Math.min(timeSinceMove / 2000, 1);
+      const since = Date.now() - lastMove;
+      const drift = Math.min(since / 2000, 1);
+      const targetX = pointer.x + Math.sin(t * 0.001) * 100 * drift;
+      const targetY = pointer.y + Math.cos(t * 0.0013) * 80 * drift;
 
       const ax = (targetX - core.x) * 0.01;
       const ay = (targetY - core.y) * 0.01;
-      core.vx += ax;
-      core.vy += ay;
-      core.vx *= 0.95;
-      core.vy *= 0.95;
-      core.x += core.vx;
-      core.y += core.vy;
+      core.vx = (core.vx + ax) * 0.95;
+      core.vy = (core.vy + ay) * 0.95;
+      core.x += core.vx; core.y += core.vy;
 
-      const { r, g, b } = hexToRgb(mainColor);
+      const { r, g, b } = currentRGB();
+      const flicker = Math.random() * 0.6;
 
-      // Glow central
+      // Glow exterior
       ctx.save();
       const gGlow = ctx.createRadialGradient(core.x, core.y, 0, core.x, core.y, 150);
       gGlow.addColorStop(0, `rgba(${r},${g},${b},${0.9 + flicker * 0.2})`);
-      gGlow.addColorStop(0.3, `rgba(${r * 0.7},${g * 0.7},${b * 0.7},${0.3 + flicker * 0.2})`);
+      gGlow.addColorStop(0.35, `rgba(${Math.round(r*0.7)},${Math.round(g*0.7)},${Math.round(b*0.7)},${0.32 + flicker * 0.18})`);
       gGlow.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = gGlow;
-      ctx.beginPath();
-      ctx.arc(core.x, core.y, core.radius * (3.5 + flicker * 0.8), 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
+      ctx.beginPath(); ctx.arc(core.x, core.y, core.radius * (3.5 + flicker * 0.8), 0, Math.PI * 2);
+      ctx.fill(); ctx.restore();
 
       // Núcleo
       ctx.beginPath();
-      ctx.fillStyle = `rgba(${r},${g},${b},${0.9 + flicker * 0.2})`;
+      ctx.fillStyle = `rgba(${r},${g},${b},${0.92 + flicker * 0.08})`;
       ctx.arc(core.x, core.y, core.radius * (1.1 + flicker * 0.1), 0, Math.PI * 2);
       ctx.fill();
 
       // Tentáculos
-      for (const tacle of tentacles) {
-        tacle.update(t);
-        tacle.draw(ctx, flicker);
-      }
+      for (const tacle of tentacles) { tacle.update(t); tacle.draw(ctx, flicker); }
 
       requestAnimationFrame(animate);
     }
-
     requestAnimationFrame(animate);
   </script>
 </body>
