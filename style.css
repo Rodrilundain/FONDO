@@ -1,168 +1,543 @@
-body>
+/* ── Reset & Base ── */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
-  <canvas id="canvas"></canvas>
+:root {
+  --accent:    #7dcaff;
+  --accent2:   #a78bfa;
+  --bg:        #030712;
+  --bg-alt:    #070f1e;
+  --bg-card:   rgba(255,255,255,0.04);
+  --border:    rgba(125,202,255,0.12);
+  --text:      #e2e8f0;
+  --text-muted:#8da5be;
+  --radius:    14px;
+  --nav-h:     64px;
+}
 
-  <script>
-    const canvas = document.getElementById("canvas");
-    const ctx = canvas.getContext("2d", { alpha: true });
+html { scroll-behavior: smooth; }
 
-    function resizeCanvas() {
-      canvas.width = window.innerWidth * devicePixelRatio;
-      canvas.height = window.innerHeight * devicePixelRatio;
-      ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-    }
-    window.addEventListener("resize", resizeCanvas);
-    resizeCanvas();
+body {
+  font-family: "Inter", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  overflow-x: hidden;
+}
 
-    // --- Movimiento inteligente ---
-    const pointer = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-    const core = { 
-      x: window.innerWidth / 2, 
-      y: window.innerHeight / 2, 
-      vx: 0, 
-      vy: 0,
-      radius: 30
-    };
+/* ── NAV ── */
+#navbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 100;
+  height: var(--nav-h);
+  transition: background 0.3s, box-shadow 0.3s;
+}
+#navbar.scrolled {
+  background: rgba(3,7,18,0.85);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 1px 0 var(--border);
+}
+.nav-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 24px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.nav-logo {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.05em;
+}
+.nav-links {
+  list-style: none;
+  display: flex;
+  gap: 32px;
+}
+.nav-links a {
+  text-decoration: none;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  transition: color 0.2s;
+}
+.nav-links a:hover { color: var(--accent); }
 
-    let lastMove = Date.now();
+.nav-toggle {
+  display: none;
+  flex-direction: column;
+  gap: 5px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+}
+.nav-toggle span {
+  display: block;
+  width: 24px;
+  height: 2px;
+  background: var(--text);
+  border-radius: 2px;
+  transition: transform 0.3s, opacity 0.3s;
+}
+.nav-toggle.active span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.nav-toggle.active span:nth-child(2) { opacity: 0; }
+.nav-toggle.active span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
 
-    function updatePointer(x, y) {
-      pointer.x = x;
-      pointer.y = y;
-      lastMove = Date.now();
-    }
+/* ── HERO ── */
+#hero {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  min-height: 600px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: radial-gradient(circle at center, #030712 0%, #000 90%);
+}
+#canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: none;
+}
+.hero-content {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  padding: 0 24px;
+  pointer-events: none;
+}
+.hero-eyebrow {
+  font-size: 0.95rem;
+  color: var(--accent);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+.hero-name {
+  font-size: clamp(2.8rem, 7vw, 5.5rem);
+  font-weight: 700;
+  line-height: 1.05;
+  background: linear-gradient(135deg, #ffffff 30%, var(--accent) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 16px;
+}
+.hero-tagline {
+  font-size: clamp(1rem, 2.5vw, 1.35rem);
+  color: var(--text-muted);
+  margin-bottom: 40px;
+}
+.hero-actions {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
+  pointer-events: all;
+}
+.btn {
+  display: inline-block;
+  padding: 12px 28px;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
+  cursor: pointer;
+}
+.btn-primary {
+  background: var(--accent);
+  color: #020a14;
+}
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(125,202,255,0.35);
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+.btn-ghost:hover {
+  background: rgba(125,202,255,0.08);
+  transform: translateY(-2px);
+}
 
-    window.addEventListener("mousemove", e => updatePointer(e.clientX, e.clientY));
-    window.addEventListener("touchmove", e => {
-      e.preventDefault();
-      const t = e.touches[0];
-      updatePointer(t.clientX, t.clientY);
-    }, { passive: false });
+.hero-scroll-hint {
+  position: absolute;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  animation: fadeInUp 1s 1.5s both;
+}
+.scroll-arrow {
+  width: 18px;
+  height: 18px;
+  border-right: 2px solid var(--text-muted);
+  border-bottom: 2px solid var(--text-muted);
+  transform: rotate(45deg);
+  animation: bounce 1.8s infinite;
+}
+@keyframes bounce {
+  0%, 100% { transform: rotate(45deg) translateY(0); }
+  50%       { transform: rotate(45deg) translateY(5px); }
+}
 
-    // --- Tentáculos ---
-    class Tentacle {
-      constructor(core, angle, options = {}) {
-        this.core = core;
-        this.angle = angle;
-        this.length = options.length || 100 + Math.random() * 80;
-        this.segments = [];
-        this.noise = Math.random() * 100;
-        this.phase = Math.random() * Math.PI * 2;
+/* ── SECTIONS ── */
+.section {
+  padding: 96px 0;
+}
+.section-alt {
+  background: var(--bg-alt);
+}
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.section-title {
+  font-size: clamp(1.8rem, 4vw, 2.5rem);
+  font-weight: 700;
+  margin-bottom: 56px;
+  position: relative;
+  display: inline-block;
+}
+.section-title::after {
+  content: "";
+  position: absolute;
+  bottom: -10px;
+  left: 0;
+  width: 48px;
+  height: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+}
 
-        const segCount = Math.floor(this.length / 10);
-        for (let i = 0; i < segCount; i++) {
-          this.segments.push({ x: core.x, y: core.y });
-        }
-      }
+/* ── ABOUT ── */
+.about-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 64px;
+  align-items: center;
+}
+.about-text p {
+  color: var(--text-muted);
+  font-size: 1.05rem;
+  margin-bottom: 20px;
+  max-width: 600px;
+}
+.about-facts {
+  display: flex;
+  gap: 40px;
+  margin-top: 40px;
+  flex-wrap: wrap;
+}
+.fact {
+  display: flex;
+  flex-direction: column;
+}
+.fact-num {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1;
+}
+.fact-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.about-visual {
+  display: flex;
+  justify-content: center;
+}
+.avatar-ring {
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  padding: 4px;
+  background: conic-gradient(from 0deg, var(--accent), var(--accent2), var(--accent));
+  animation: spin 6s linear infinite;
+  flex-shrink: 0;
+}
+.avatar-inner {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: var(--bg-alt);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.05em;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 
-      update(t) {
-        const baseAngle = this.angle + Math.sin(t * 0.001 + this.phase) * 0.3;
-        const dirX = Math.cos(baseAngle) * 180;
-        const dirY = Math.sin(baseAngle) * 180;
+/* ── SKILLS ── */
+.skills-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 20px;
+}
+.skill-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 24px;
+  transition: border-color 0.3s, transform 0.3s;
+}
+.skill-card:hover {
+  border-color: rgba(125,202,255,0.35);
+  transform: translateY(-4px);
+}
+.skill-icon {
+  font-size: 1.8rem;
+  margin-bottom: 14px;
+}
+.skill-card h3 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--accent);
+}
+.skill-card ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.skill-card li {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  padding-left: 14px;
+  position: relative;
+}
+.skill-card li::before {
+  content: "›";
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+}
 
-        let prevX = this.core.x;
-        let prevY = this.core.y;
-        const segLen = 10;
+/* ── PROJECTS ── */
+.projects-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+}
+.project-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 24px;
+  position: relative;
+  transition: border-color 0.3s, transform 0.3s;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.project-card:hover {
+  border-color: rgba(125,202,255,0.35);
+  transform: translateY(-4px);
+}
+.project-card.featured {
+  border-color: rgba(125,202,255,0.3);
+  background: linear-gradient(135deg, rgba(125,202,255,0.06) 0%, rgba(167,139,250,0.04) 100%);
+}
+.project-badge {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: rgba(125,202,255,0.1);
+  border: 1px solid rgba(125,202,255,0.25);
+  border-radius: 99px;
+  padding: 2px 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.project-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.project-icon { font-size: 2rem; }
+.project-links {
+  display: flex;
+  gap: 12px;
+}
+.icon-link {
+  color: var(--text-muted);
+  transition: color 0.2s;
+}
+.icon-link svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+.icon-link:hover { color: var(--accent); }
+.project-card h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+.project-card p {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  flex: 1;
+}
+.project-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+.project-tags span {
+  font-size: 0.75rem;
+  color: var(--accent);
+  background: rgba(125,202,255,0.08);
+  border: 1px solid rgba(125,202,255,0.18);
+  border-radius: 99px;
+  padding: 2px 10px;
+}
 
-        for (let i = 0; i < this.segments.length; i++) {
-          const seg = this.segments[i];
-          const pct = i / this.segments.length;
-          const wave = Math.sin(t * 0.004 + this.noise + i * 0.3) * 60 * (1 - pct);
-          const swayAngle = baseAngle + Math.PI / 2;
-          const targetX = this.core.x + dirX * pct + wave * Math.cos(swayAngle);
-          const targetY = this.core.y + dirY * pct + wave * Math.sin(swayAngle);
+/* ── CONTACT ── */
+.contact-intro {
+  color: var(--text-muted);
+  font-size: 1.05rem;
+  margin-top: -36px;
+  margin-bottom: 48px;
+}
+.contact-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 20px;
+}
+.contact-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  text-decoration: none;
+  transition: border-color 0.3s, transform 0.3s;
+}
+.contact-card:hover {
+  border-color: rgba(125,202,255,0.35);
+  transform: translateY(-4px);
+}
+.contact-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba(125,202,255,0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+}
+.contact-icon svg {
+  width: 18px;
+  height: 18px;
+}
+.contact-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.contact-value {
+  font-size: 0.95rem;
+  color: var(--text);
+  font-weight: 500;
+}
 
-          const dx = targetX - prevX;
-          const dy = targetY - prevY;
-          const dist = Math.hypot(dx, dy) || 1;
-          const ratio = segLen / dist;
+/* ── FOOTER ── */
+#footer {
+  border-top: 1px solid var(--border);
+  padding: 32px 0;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+.heart { color: #ff6b8a; }
 
-          seg.x = prevX + dx * ratio;
-          seg.y = prevY + dy * ratio;
+/* ── FADE-IN ANIMATION ── */
+.fade-in {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.fade-in.visible {
+  opacity: 1;
+  transform: none;
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateX(-50%) translateY(12px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
 
-          prevX = seg.x;
-          prevY = seg.y;
-        }
-      }
+/* ── RESPONSIVE ── */
+@media (max-width: 768px) {
+  .nav-links {
+    position: fixed;
+    top: var(--nav-h);
+    left: 0; right: 0;
+    background: rgba(3,7,18,0.97);
+    backdrop-filter: blur(16px);
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    padding: 0;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.35s ease, padding 0.35s ease;
+  }
+  .nav-links.open {
+    max-height: 300px;
+    padding: 16px 0;
+  }
+  .nav-links li { width: 100%; text-align: center; }
+  .nav-links a {
+    display: block;
+    padding: 14px 24px;
+    font-size: 1rem;
+  }
+  .nav-toggle { display: flex; }
 
-      draw(ctx, flicker) {
-        const grad = ctx.createLinearGradient(
-          this.core.x, this.core.y,
-          this.segments[this.segments.length - 1].x,
-          this.segments[this.segments.length - 1].y
-        );
-        grad.addColorStop(0, `rgba(0,200,255,${0.8 + flicker * 0.2})`);
-        grad.addColorStop(1, `rgba(150,0,255,${0.3 + flicker * 0.2})`);
+  .about-grid {
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+  .about-visual { order: -1; }
+  .about-facts { gap: 24px; }
+  .section { padding: 72px 0; }
+}
 
-        ctx.save();
-        ctx.globalCompositeOperation = "lighter";
-        ctx.beginPath();
-        ctx.moveTo(this.core.x, this.core.y);
-        for (const p of this.segments) ctx.lineTo(p.x, p.y);
-        ctx.strokeStyle = grad;
-        ctx.lineWidth = 2 + flicker * 2;
-        ctx.shadowBlur = 25 + flicker * 45;
-        ctx.shadowColor = `rgba(80,200,255,${0.7})`;
-        ctx.stroke();
-        ctx.restore();
-      }
-    }
-
-    const tentacles = [];
-    const total = 36;
-    for (let i = 0; i < total; i++) {
-      const angle = (i / total) * Math.PI * 2;
-      tentacles.push(new Tentacle(core, angle));
-    }
-
-    // --- Animación principal ---
-    function animate(t) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      const timeSinceMove = Date.now() - lastMove;
-      const flicker = Math.random() * 0.6;
-
-      // Si el usuario no mueve el mouse, flota suavemente
-      const targetX = pointer.x + Math.sin(t * 0.001) * 100 * Math.min(timeSinceMove / 2000, 1);
-      const targetY = pointer.y + Math.cos(t * 0.0013) * 80 * Math.min(timeSinceMove / 2000, 1);
-
-      // Movimiento con inercia
-      const ax = (targetX - core.x) * 0.01;
-      const ay = (targetY - core.y) * 0.01;
-      core.vx += ax;
-      core.vy += ay;
-      core.vx *= 0.95;
-      core.vy *= 0.95;
-      core.x += core.vx;
-      core.y += core.vy;
-
-      // Glow central
-      ctx.save();
-      const g = ctx.createRadialGradient(core.x, core.y, 0, core.x, core.y, 150);
-      g.addColorStop(0, `rgba(120,210,255,${0.9 + flicker * 0.2})`);
-      g.addColorStop(0.3, `rgba(80,150,255,${0.3 + flicker * 0.2})`);
-      g.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(core.x, core.y, core.radius * (3.5 + flicker * 0.8), 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-
-      // Núcleo eléctrico
-      ctx.beginPath();
-      ctx.fillStyle = `rgba(180,220,255,${0.9 + flicker * 0.2})`;
-      ctx.arc(core.x, core.y, core.radius * (1.1 + flicker * 0.1), 0, Math.PI * 2);
-      ctx.fill();
-
-      // Tentáculos vivos
-      for (const tacle of tentacles) {
-        tacle.update(t);
-        tacle.draw(ctx, flicker);
-      }
-
-      requestAnimationFrame(animate);
-    }
-
-    requestAnimationFrame(animate);
-  </script>
-</body>
+@media (max-width: 480px) {
+  .hero-actions { flex-direction: column; align-items: center; }
+  .btn { width: 200px; text-align: center; }
+}

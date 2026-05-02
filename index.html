@@ -3,407 +3,278 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Medusa Inteligente – Grupo Fiancar</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body {
-      width: 100%; height: 100%;
-      overflow: hidden;
-      background: radial-gradient(circle at center, #030712 0%, #000 90%);
-      font-family: "Inter", sans-serif;
-      color: #7dcaff;
-    }
-    canvas {
-      position: fixed; top: 0; left: 0;
-      width: 100vw; height: 100vh;
-      display: block; cursor: none;
-    }
-
-    /* Menú hamburguesa */
-    .menu-btn {
-      position: absolute;
-      top: 15px; right: 20px;
-      z-index: 10;
-      width: 32px; height: 24px;
-      cursor: pointer;
-      display: flex; flex-direction: column;
-      justify-content: space-between;
-    }
-    .menu-btn div {
-      height: 4px;
-      background: #7dcaff;
-      border-radius: 2px;
-      transition: 0.3s;
-    }
-    .menu {
-      position: absolute;
-      top: 55px; right: 15px;
-      width: 270px;
-      background: rgba(0,0,0,0.85);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 12px;
-      box-shadow: 0 8px 20px rgba(0,0,0,0.6);
-      padding: 16px;
-      display: none;
-      flex-direction: column;
-      gap: 10px;
-      z-index: 15;
-      backdrop-filter: blur(8px);
-    }
-    .menu.open { display: flex; }
-    .menu label {
-      font-size: 0.9em;
-      color: #9cdcff;
-      margin-bottom: 2px;
-    }
-    .menu input[type="color"] {
-      width: 100%;
-      height: 30px;
-      border: none;
-      border-radius: 6px;
-      background: transparent;
-      cursor: pointer;
-    }
-    .menu input[type="checkbox"] {
-      transform: scale(1.2);
-      margin-right: 6px;
-    }
-    .url-box {
-      display: flex;
-      flex-direction: column;
-    }
-    .url-box input {
-      padding: 6px 8px;
-      border-radius: 6px;
-      border: none;
-      background: #0a1724;
-      color: #7dcaff;
-      font-size: 0.8em;
-      outline: none;
-    }
-    .status {
-      font-size: 0.8em;
-      margin-top: 4px;
-      color: #9cdcff;
-      opacity: 0.8;
-    }
-
-    /* Chat */
-    .chat {
-      position: absolute;
-      bottom: 0;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 90%;
-      max-width: 480px;
-      background: rgba(0,0,0,0.6);
-      border-top-left-radius: 14px;
-      border-top-right-radius: 14px;
-      box-shadow: 0 -2px 18px rgba(0,0,0,0.6);
-      display: none;
-      flex-direction: column;
-      padding: 12px;
-      color: #cde9ff;
-      z-index: 20;
-      backdrop-filter: blur(10px);
-    }
-    .messages {
-      flex: 1;
-      max-height: 260px;
-      overflow-y: auto;
-      font-size: 0.9em;
-      margin-bottom: 8px;
-    }
-    .msg {
-      margin: 4px 0;
-      padding: 6px 10px;
-      border-radius: 8px;
-      line-height: 1.3;
-    }
-    .msg.user { background: rgba(125,202,255,0.15); text-align: right; }
-    .msg.bot { background: rgba(125,202,255,0.05); text-align: left; }
-    .chat input {
-      padding: 8px 10px;
-      border-radius: 8px;
-      border: none;
-      background: rgba(255,255,255,0.1);
-      color: #fff;
-      width: 100%;
-      outline: none;
-      font-family: inherit;
-    }
-  </style>
+  <title>Rodrigo Lundain – Portfolio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
-  <canvas id="canvas"></canvas>
-
-  <!-- Menú hamburguesa -->
-  <div class="menu-btn" id="menuBtn">
-    <div></div><div></div><div></div>
-  </div>
-
-  <div class="menu" id="menu">
-    <div>
-      <label for="color">🎨 Color manual</label>
-      <input type="color" id="color" value="#7dcaff">
+  <!-- ── NAV ── -->
+  <nav id="navbar">
+    <div class="nav-inner">
+      <span class="nav-logo">RL</span>
+      <ul class="nav-links">
+        <li><a href="#about">Sobre mí</a></li>
+        <li><a href="#skills">Habilidades</a></li>
+        <li><a href="#projects">Proyectos</a></li>
+        <li><a href="#contact">Contacto</a></li>
+      </ul>
+      <button class="nav-toggle" id="navToggle" aria-label="Menú">
+        <span></span><span></span><span></span>
+      </button>
     </div>
+  </nav>
 
-    <div>
-      <label><input type="checkbox" id="autoColor"> Cambio automático</label>
+  <!-- ── HERO ── -->
+  <section id="hero">
+    <canvas id="canvas"></canvas>
+    <div class="hero-content">
+      <p class="hero-eyebrow">Hola, soy</p>
+      <h1 class="hero-name">Rodrigo Lundain</h1>
+      <p class="hero-tagline">Desarrollador Full Stack &amp; Entusiasta de IA</p>
+      <div class="hero-actions">
+        <a href="#projects" class="btn btn-primary">Ver proyectos</a>
+        <a href="#contact" class="btn btn-ghost">Contactarme</a>
+      </div>
     </div>
-
-    <div class="url-box">
-      <label for="docUrl">🗂️ URL documento</label>
-      <input type="text" id="docUrl" placeholder="https://ejemplo.com/documento">
-      <div class="status" id="status">Sin documento cargado</div>
+    <div class="hero-scroll-hint">
+      <span>Scroll</span>
+      <div class="scroll-arrow"></div>
     </div>
-  </div>
+  </section>
 
-  <!-- Chat -->
-  <div class="chat" id="chat">
-    <div class="messages" id="messages"></div>
-    <input type="text" id="question" placeholder="Escribí tu pregunta y presioná Enter...">
-  </div>
+  <!-- ── ABOUT ── -->
+  <section id="about" class="section">
+    <div class="container">
+      <h2 class="section-title">Sobre mí</h2>
+      <div class="about-grid">
+        <div class="about-text">
+          <p>Soy un desarrollador apasionado por crear experiencias digitales que combinan funcionalidad y creatividad. Me especializo en desarrollo web full stack con un fuerte interés en inteligencia artificial y animaciones interactivas.</p>
+          <p>Trabajo con tecnologías modernas para construir aplicaciones robustas y escalables, siempre buscando la intersección entre el arte y la ingeniería.</p>
+          <div class="about-facts">
+            <div class="fact">
+              <span class="fact-num">3+</span>
+              <span class="fact-label">Años de experiencia</span>
+            </div>
+            <div class="fact">
+              <span class="fact-num">20+</span>
+              <span class="fact-label">Proyectos completados</span>
+            </div>
+            <div class="fact">
+              <span class="fact-num">∞</span>
+              <span class="fact-label">Ganas de aprender</span>
+            </div>
+          </div>
+        </div>
+        <div class="about-visual">
+          <div class="avatar-ring">
+            <div class="avatar-inner">RL</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 
+  <!-- ── SKILLS ── -->
+  <section id="skills" class="section section-alt">
+    <div class="container">
+      <h2 class="section-title">Habilidades</h2>
+      <div class="skills-grid">
+        <div class="skill-card">
+          <div class="skill-icon">⚡</div>
+          <h3>Frontend</h3>
+          <ul>
+            <li>HTML / CSS / JavaScript</li>
+            <li>Canvas &amp; WebGL</li>
+            <li>Animaciones interactivas</li>
+            <li>Diseño responsivo</li>
+          </ul>
+        </div>
+        <div class="skill-card">
+          <div class="skill-icon">🔧</div>
+          <h3>Backend</h3>
+          <ul>
+            <li>Node.js / Express</li>
+            <li>REST APIs</li>
+            <li>Bases de datos SQL/NoSQL</li>
+            <li>Autenticación &amp; seguridad</li>
+          </ul>
+        </div>
+        <div class="skill-card">
+          <div class="skill-icon">🤖</div>
+          <h3>IA &amp; APIs</h3>
+          <ul>
+            <li>OpenAI / GPT</li>
+            <li>Claude / Anthropic</li>
+            <li>Integración de modelos LLM</li>
+            <li>Prompt engineering</li>
+          </ul>
+        </div>
+        <div class="skill-card">
+          <div class="skill-icon">🚀</div>
+          <h3>DevOps &amp; Herramientas</h3>
+          <ul>
+            <li>Git / GitHub</li>
+            <li>GitHub Pages / Actions</li>
+            <li>Docker</li>
+            <li>Render / Vercel</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── PROJECTS ── -->
+  <section id="projects" class="section">
+    <div class="container">
+      <h2 class="section-title">Proyectos</h2>
+      <div class="projects-grid">
+        <article class="project-card featured">
+          <div class="project-badge">Destacado</div>
+          <div class="project-header">
+            <span class="project-icon">🪼</span>
+            <div class="project-links">
+              <a href="#" class="icon-link" title="Ver código" aria-label="Código fuente">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+              </a>
+              <a href="#" class="icon-link" title="Demo en vivo" aria-label="Demo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              </a>
+            </div>
+          </div>
+          <h3>Medusa Inteligente</h3>
+          <p>Animación interactiva de medusa con tentáculos procedurales y chatbot integrado con IA. Canvas 2D con física de partículas y gradientes dinámicos.</p>
+          <div class="project-tags">
+            <span>JavaScript</span><span>Canvas 2D</span><span>OpenAI</span><span>Node.js</span>
+          </div>
+        </article>
+
+        <article class="project-card">
+          <div class="project-header">
+            <span class="project-icon">📊</span>
+            <div class="project-links">
+              <a href="#" class="icon-link" aria-label="Código fuente">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+              </a>
+            </div>
+          </div>
+          <h3>Dashboard Financiero</h3>
+          <p>Panel de control para análisis financiero con visualizaciones en tiempo real, integración de APIs bancarias y reportes automatizados.</p>
+          <div class="project-tags">
+            <span>React</span><span>Node.js</span><span>Chart.js</span>
+          </div>
+        </article>
+
+        <article class="project-card">
+          <div class="project-header">
+            <span class="project-icon">💬</span>
+            <div class="project-links">
+              <a href="#" class="icon-link" aria-label="Código fuente">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+              </a>
+            </div>
+          </div>
+          <h3>Asistente de Documentos</h3>
+          <p>Aplicación web para hacer preguntas sobre documentos cargados por el usuario, usando LLMs para extracción inteligente de información.</p>
+          <div class="project-tags">
+            <span>Python</span><span>LangChain</span><span>Vector DB</span>
+          </div>
+        </article>
+
+        <article class="project-card">
+          <div class="project-header">
+            <span class="project-icon">🌐</span>
+            <div class="project-links">
+              <a href="#" class="icon-link" aria-label="Código fuente">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+              </a>
+            </div>
+          </div>
+          <h3>API REST Empresarial</h3>
+          <p>Backend robusto con autenticación JWT, rate limiting, documentación automática y despliegue en contenedores Docker.</p>
+          <div class="project-tags">
+            <span>Express</span><span>JWT</span><span>Docker</span><span>PostgreSQL</span>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── CONTACT ── -->
+  <section id="contact" class="section section-alt">
+    <div class="container">
+      <h2 class="section-title">Contacto</h2>
+      <p class="contact-intro">¿Tenés un proyecto en mente? Me encantaría escucharte.</p>
+      <div class="contact-grid">
+        <a href="mailto:rodrigo@example.com" class="contact-card">
+          <span class="contact-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          </span>
+          <span class="contact-label">Email</span>
+          <span class="contact-value">rodrigo@example.com</span>
+        </a>
+        <a href="https://github.com/Rodrilundain" target="_blank" rel="noopener" class="contact-card">
+          <span class="contact-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+          </span>
+          <span class="contact-label">GitHub</span>
+          <span class="contact-value">Rodrilundain</span>
+        </a>
+        <a href="https://linkedin.com/in/rodrigolundain" target="_blank" rel="noopener" class="contact-card">
+          <span class="contact-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg>
+          </span>
+          <span class="contact-label">LinkedIn</span>
+          <span class="contact-value">rodrigolundain</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── FOOTER ── -->
+  <footer id="footer">
+    <div class="container">
+      <p>© 2026 Rodrigo Lundain · Hecho con <span class="heart">♥</span> y mucho café</p>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
   <script>
-    const BACKEND_URL = "https://TU_DOMINIO/ask"; // 🔧 Cambiá esto por tu endpoint real
-
-    const canvas = document.getElementById("canvas");
-    const ctx = canvas.getContext("2d", { alpha: true });
-    const colorPicker = document.getElementById("color");
-    const autoColor = document.getElementById("autoColor");
-    const menu = document.getElementById("menu");
-    const menuBtn = document.getElementById("menuBtn");
-    const docUrlInput = document.getElementById("docUrl");
-    const status = document.getElementById("status");
-    const chat = document.getElementById("chat");
-    const messages = document.getElementById("messages");
-    const question = document.getElementById("question");
-
-    menuBtn.addEventListener("click", () => menu.classList.toggle("open"));
-
-    // === Color control ===
-    let mainColor = colorPicker.value;
-    let autoHue = 200;
-    let autoMode = false;
-    colorPicker.addEventListener("input", e => mainColor = e.target.value);
-    autoColor.addEventListener("change", e => autoMode = e.target.checked);
-
-    function hslToHex(h, s, l) {
-      s /= 100; l /= 100;
-      const a = s * Math.min(l, 1 - l);
-      const f = n => {
-        const k = (n + h / 30) % 12;
-        const color = l - a * Math.max(-1, Math.min(k - 3, Math.min(9 - k, 1)));
-        return Math.round(255 * color);
-      };
-      return "#" + [f(0), f(8), f(4)]
-        .map(x => x.toString(16).padStart(2, "0")).join("");
-    }
-    function hexToRgb(hex) {
-      const bigint = parseInt(hex.slice(1), 16);
-      const r = (bigint >> 16) & 255;
-      const g = (bigint >> 8) & 255;
-      const b = bigint & 255;
-      return { r, g, b };
-    }
-
-    // === Documento remoto ===
-    let documentoCargado = "";
-
-    docUrlInput.addEventListener("change", async () => {
-      const url = docUrlInput.value.trim();
-      if (!url) return;
-      status.textContent = "Cargando documento...";
-      try {
-        const proxy = "https://api.allorigins.win/get?url=" + encodeURIComponent(url);
-        const res = await fetch(proxy);
-        const data = await res.json();
-        const html = data.contents;
-
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, "text/html");
-        documentoCargado = doc.body.innerText.replace(/\s+/g, " ").trim();
-
-        status.textContent = "✅ Documento cargado correctamente.";
-        chat.style.display = "flex";
-      } catch (err) {
-        console.error(err);
-        status.textContent = "⚠️ Error al leer el documento.";
-      }
+    // Nav scroll effect
+    const navbar = document.getElementById("navbar");
+    window.addEventListener("scroll", () => {
+      navbar.classList.toggle("scrolled", window.scrollY > 50);
     });
 
-    // === Chat ===
-    question.addEventListener("keypress", e => {
-      if (e.key === "Enter" && question.value.trim()) {
-        const query = question.value.trim();
-        addMessage(query, "user");
-        question.value = "";
-        medusaRespond(query);
-      }
+    // Mobile nav toggle
+    const navToggle = document.getElementById("navToggle");
+    const navLinks = document.querySelector(".nav-links");
+    navToggle.addEventListener("click", () => {
+      navLinks.classList.toggle("open");
+      navToggle.classList.toggle("active");
+    });
+    document.querySelectorAll(".nav-links a").forEach(a => {
+      a.addEventListener("click", () => {
+        navLinks.classList.remove("open");
+        navToggle.classList.remove("active");
+      });
     });
 
-    function addMessage(text, sender) {
-      const div = document.createElement("div");
-      div.className = `msg ${sender}`;
-      div.textContent = text;
-      messages.appendChild(div);
-      messages.scrollTop = messages.scrollHeight;
-    }
-
-    async function medusaRespond(query) {
-      if (!documentoCargado) {
-        addMessage("⚠️ Cargá primero un documento.", "bot");
-        return;
-      }
-      addMessage("💭 Pensando...", "bot");
-      try {
-        const res = await fetch(BACKEND_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            context: documentoCargado.slice(0, 8000),
-            question: query
-          })
-        });
-        const data = await res.json();
-        messages.lastChild.textContent = data.reply || "⚡ No obtuve respuesta.";
-        pulse = 6;
-      } catch (err) {
-        console.error(err);
-        messages.lastChild.textContent = "⚠️ Error al conectar con ChatGPT.";
-      }
-    }
-
-    // === Canvas y animación ===
-    function resizeCanvas() {
-      canvas.width = window.innerWidth * devicePixelRatio;
-      canvas.height = window.innerHeight * devicePixelRatio;
-      ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-    }
-    window.addEventListener("resize", resizeCanvas);
-    resizeCanvas();
-
-    const pointer = { x: innerWidth / 2, y: innerHeight / 2 };
-    const core = { x: pointer.x, y: pointer.y, vx: 0, vy: 0, radius: 30 };
-    let lastMove = Date.now();
-
-    window.addEventListener("mousemove", e => updatePointer(e.clientX, e.clientY));
-    window.addEventListener("touchmove", e => {
-      e.preventDefault();
-      const t = e.touches[0];
-      updatePointer(t.clientX, t.clientY);
-    }, { passive: false });
-
-    function updatePointer(x, y) {
-      pointer.x = x;
-      pointer.y = y;
-      lastMove = Date.now();
-    }
-
-    class Tentacle {
-      constructor(core, angle) {
-        this.core = core; this.angle = angle;
-        this.length = 100 + Math.random() * 80;
-        this.segments = [];
-        this.noise = Math.random() * 100;
-        this.phase = Math.random() * Math.PI * 2;
-        const segCount = Math.floor(this.length / 10);
-        for (let i = 0; i < segCount; i++) this.segments.push({ x: core.x, y: core.y });
-      }
-      update(t) {
-        const baseAngle = this.angle + Math.sin(t * 0.001 + this.phase) * 0.3;
-        const dirX = Math.cos(baseAngle) * 180;
-        const dirY = Math.sin(baseAngle) * 180;
-        let prevX = this.core.x, prevY = this.core.y;
-        const segLen = 10;
-        for (let i = 0; i < this.segments.length; i++) {
-          const seg = this.segments[i];
-          const pct = i / this.segments.length;
-          const wave = Math.sin(t * 0.004 + this.noise + i * 0.3) * 60 * (1 - pct);
-          const swayAngle = baseAngle + Math.PI / 2;
-          const targetX = this.core.x + dirX * pct + wave * Math.cos(swayAngle);
-          const targetY = this.core.y + dirY * pct + wave * Math.sin(swayAngle);
-          const dx = targetX - prevX, dy = targetY - prevY;
-          const dist = Math.hypot(dx, dy) || 1;
-          const ratio = segLen / dist;
-          seg.x = prevX + dx * ratio;
-          seg.y = prevY + dy * ratio;
-          prevX = seg.x; prevY = seg.y;
+    // Intersection observer for fade-in
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          e.target.classList.add("visible");
+          observer.unobserve(e.target);
         }
-      }
-      draw(ctx, flicker) {
-        const { r, g, b } = hexToRgb(mainColor);
-        const grad = ctx.createLinearGradient(this.core.x, this.core.y, this.segments.at(-1).x, this.segments.at(-1).y);
-        grad.addColorStop(0, `rgba(${r},${g},${b},${0.8 + flicker * 0.2})`);
-        grad.addColorStop(1, `rgba(${r * 0.4},${g * 0.4},${b * 0.4},${0.3 + flicker * 0.2})`);
-        ctx.save();
-        ctx.globalCompositeOperation = "lighter";
-        ctx.beginPath();
-        ctx.moveTo(this.core.x, this.core.y);
-        for (const p of this.segments) ctx.lineTo(p.x, p.y);
-        ctx.strokeStyle = grad;
-        ctx.lineWidth = 2 + flicker * 2;
-        ctx.shadowBlur = 25 + flicker * 45;
-        ctx.shadowColor = `rgba(${r},${g},${b},0.7)`;
-        ctx.stroke();
-        ctx.restore();
-      }
-    }
+      });
+    }, { threshold: 0.12 });
 
-    const tentacles = Array.from({ length: 65 }, (_, i) => new Tentacle(core, (i / 65) * Math.PI * 2));
-    let pulse = 0;
-
-    function animate(t) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      if (autoMode) {
-        autoHue = (autoHue + 0.5) % 360;
-        mainColor = hslToHex(autoHue, 100, 65);
-        colorPicker.value = mainColor;
-      }
-
-      const timeSinceMove = Date.now() - lastMove;
-      const flicker = Math.random() * 0.6 + pulse * 0.3;
-      pulse = Math.max(pulse - 0.05, 0);
-
-      const targetX = pointer.x + Math.sin(t * 0.001) * 100 * Math.min(timeSinceMove / 2000, 1);
-      const targetY = pointer.y + Math.cos(t * 0.0013) * 80 * Math.min(timeSinceMove / 2000, 1);
-
-      const ax = (targetX - core.x) * 0.01;
-      const ay = (targetY - core.y) * 0.01;
-      core.vx += ax; core.vy += ay;
-      core.vx *= 0.95; core.vy *= 0.95;
-      core.x += core.vx; core.y += core.vy;
-
-      const { r, g, b } = hexToRgb(mainColor);
-
-      ctx.save();
-      const gGlow = ctx.createRadialGradient(core.x, core.y, 0, core.x, core.y, 150);
-      gGlow.addColorStop(0, `rgba(${r},${g},${b},${0.9 + flicker * 0.2})`);
-      gGlow.addColorStop(0.3, `rgba(${r * 0.7},${g * 0.7},${b * 0.7},${0.3 + flicker * 0.2})`);
-      gGlow.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = gGlow;
-      ctx.beginPath();
-      ctx.arc(core.x, core.y, core.radius * (3.5 + flicker * 0.8), 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-
-      ctx.beginPath();
-      ctx.fillStyle = `rgba(${r},${g},${b},${0.9 + flicker * 0.2})`;
-      ctx.arc(core.x, core.y, core.radius * (1.1 + flicker * 0.1), 0, Math.PI * 2);
-      ctx.fill();
-
-      for (const tacle of tentacles) {
-        tacle.update(t);
-        tacle.draw(ctx, flicker);
-      }
-
-      requestAnimationFrame(animate);
-    }
-
-    requestAnimationFrame(animate);
+    document.querySelectorAll(".skill-card, .project-card, .contact-card, .about-grid, .fact").forEach(el => {
+      el.classList.add("fade-in");
+      observer.observe(el);
+    });
   </script>
 </body>
 </html>
