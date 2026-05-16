@@ -1,168 +1,203 @@
-body>
+:root {
+  --primary-color: #7dcaff;
+  --bg-gradient: radial-gradient(circle at center, #030712 0%, #000 90%);
+  --glass-bg: rgba(255, 255, 255, 0.03);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --accent-glow: 0 0 20px rgba(125, 202, 255, 0.3);
+}
 
-  <canvas id="canvas"></canvas>
+* { margin: 0; padding: 0; box-sizing: border-box; }
 
-  <script>
-    const canvas = document.getElementById("canvas");
-    const ctx = canvas.getContext("2d", { alpha: true });
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: var(--bg-gradient);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #e0f2ff;
+  -webkit-font-smoothing: antialiased;
+}
 
-    function resizeCanvas() {
-      canvas.width = window.innerWidth * devicePixelRatio;
-      canvas.height = window.innerHeight * devicePixelRatio;
-      ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-    }
-    window.addEventListener("resize", resizeCanvas);
-    resizeCanvas();
+canvas {
+  position: fixed; top: 0; left: 0;
+  width: 100vw; height: 100vh;
+  display: block; cursor: crosshair;
+  z-index: 1;
+}
 
-    // --- Movimiento inteligente ---
-    const pointer = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-    const core = { 
-      x: window.innerWidth / 2, 
-      y: window.innerHeight / 2, 
-      vx: 0, 
-      vy: 0,
-      radius: 30
-    };
+/* Menú hamburguesa */
+.menu-btn {
+  position: absolute;
+  top: 30px; right: 30px;
+  z-index: 100;
+  width: 30px; height: 20px;
+  cursor: pointer;
+  display: flex; flex-direction: column;
+  justify-content: space-between;
+  transition: 0.3s ease;
+}
+.menu-btn:hover { opacity: 0.8; transform: scale(1.1); }
+.menu-btn div {
+  height: 2px;
+  background: var(--primary-color);
+  border-radius: 10px;
+  box-shadow: 0 0 10px var(--primary-color);
+}
 
-    let lastMove = Date.now();
+.menu {
+  position: fixed;
+  top: 0; right: -320px;
+  width: 320px; height: 100%;
+  background: rgba(3, 7, 18, 0.85);
+  backdrop-filter: blur(20px) saturate(180%);
+  border-left: 1px solid var(--glass-border);
+  box-shadow: -10px 0 30px rgba(0,0,0,0.8);
+  padding: 40px 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  z-index: 1000;
+  transition: 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.menu.open { right: 0; }
 
-    function updatePointer(x, y) {
-      pointer.x = x;
-      pointer.y = y;
-      lastMove = Date.now();
-    }
+.menu-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+.menu-header h3 {
+  color: var(--primary-color);
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-size: 0.9rem;
+}
+#closeMenu {
+  background: rgba(255,255,255,0.05); border: none; color: #fff;
+  width: 32px; height: 32px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: 0.2s;
+}
+#closeMenu:hover { background: rgba(255,255,255,0.15); }
 
-    window.addEventListener("mousemove", e => updatePointer(e.clientX, e.clientY));
-    window.addEventListener("touchmove", e => {
-      e.preventDefault();
-      const t = e.touches[0];
-      updatePointer(t.clientX, t.clientY);
-    }, { passive: false });
+.setting-item {
+  display: flex; flex-direction: column; gap: 12px;
+}
+.setting-item label { font-size: 0.85em; color: #9cdcff; opacity: 0.8; font-weight: 500; }
 
-    // --- Tentáculos ---
-    class Tentacle {
-      constructor(core, angle, options = {}) {
-        this.core = core;
-        this.angle = angle;
-        this.length = options.length || 100 + Math.random() * 80;
-        this.segments = [];
-        this.noise = Math.random() * 100;
-        this.phase = Math.random() * Math.PI * 2;
+input[type="color"] {
+  -webkit-appearance: none;
+  width: 100%; height: 40px; border: none; border-radius: 12px;
+  background: rgba(255,255,255,0.05); cursor: pointer;
+  padding: 5px;
+}
+input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+input[type="color"]::-webkit-color-swatch { border: none; border-radius: 8px; }
 
-        const segCount = Math.floor(this.length / 10);
-        for (let i = 0; i < segCount; i++) {
-          this.segments.push({ x: core.x, y: core.y });
-        }
-      }
+.url-box { display: flex; flex-direction: column; gap: 12px; }
+.url-box input {
+  padding: 12px 16px; border-radius: 12px;
+  border: 1px solid var(--glass-border);
+  background: rgba(255,255,255,0.03);
+  color: var(--primary-color);
+  font-size: 0.9rem;
+  outline: none; transition: 0.3s;
+}
+.url-box input:focus { border-color: var(--primary-color); background: rgba(255,255,255,0.08); }
+.status { font-size: 0.75em; color: #9cdcff; opacity: 0.6; padding-left: 5px; }
 
-      update(t) {
-        const baseAngle = this.angle + Math.sin(t * 0.001 + this.phase) * 0.3;
-        const dirX = Math.cos(baseAngle) * 180;
-        const dirY = Math.sin(baseAngle) * 180;
+/* Chat UI Moderno */
+.chat-container {
+  position: absolute;
+  bottom: 30px; left: 50%;
+  transform: translateX(-50%);
+  width: 90%; max-width: 550px;
+  background: rgba(10, 20, 30, 0.4);
+  backdrop-filter: blur(25px) saturate(150%);
+  border: 1px solid var(--glass-border);
+  border-radius: 28px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+  display: flex; flex-direction: column;
+  z-index: 50;
+  overflow: hidden;
+  transition: 0.3s ease;
+}
 
-        let prevX = this.core.x;
-        let prevY = this.core.y;
-        const segLen = 10;
+.chat-header {
+  padding: 18px 25px;
+  background: rgba(255,255,255,0.03);
+  border-bottom: 1px solid var(--glass-border);
+  display: flex; align-items: center; gap: 12px;
+}
+.chat-header span {
+  font-size: 0.95rem; font-weight: 600;
+  background: linear-gradient(90deg, #fff, var(--primary-color));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.medusa-avatar {
+  font-size: 1.4rem;
+  filter: drop-shadow(0 0 5px var(--primary-color));
+}
 
-        for (let i = 0; i < this.segments.length; i++) {
-          const seg = this.segments[i];
-          const pct = i / this.segments.length;
-          const wave = Math.sin(t * 0.004 + this.noise + i * 0.3) * 60 * (1 - pct);
-          const swayAngle = baseAngle + Math.PI / 2;
-          const targetX = this.core.x + dirX * pct + wave * Math.cos(swayAngle);
-          const targetY = this.core.y + dirY * pct + wave * Math.sin(swayAngle);
+.messages {
+  flex: 1; height: 350px; overflow-y: auto;
+  padding: 25px; display: flex; flex-direction: column; gap: 15px;
+}
+.messages::-webkit-scrollbar { width: 4px; }
+.messages::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
 
-          const dx = targetX - prevX;
-          const dy = targetY - prevY;
-          const dist = Math.hypot(dx, dy) || 1;
-          const ratio = segLen / dist;
+.msg {
+  padding: 12px 18px; border-radius: 20px;
+  max-width: 80%; font-size: 0.9rem; line-height: 1.5;
+  animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.msg.user {
+  align-self: flex-end;
+  background: linear-gradient(135deg, rgba(125, 202, 255, 0.25), rgba(125, 202, 255, 0.1));
+  border: 1px solid rgba(125, 202, 255, 0.2);
+  border-bottom-right-radius: 4px;
+}
+.msg.bot {
+  align-self: flex-start;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-border);
+  border-bottom-left-radius: 4px;
+}
 
-          seg.x = prevX + dx * ratio;
-          seg.y = prevY + dy * ratio;
+.input-area {
+  padding: 20px; display: flex; gap: 12px;
+  background: rgba(0,0,0,0.2);
+}
+.input-area input {
+  flex: 1; padding: 12px 20px; border-radius: 16px;
+  border: 1px solid var(--glass-border);
+  background: rgba(255,255,255,0.05);
+  color: #fff; outline: none; transition: 0.3s;
+  font-size: 0.9rem;
+}
+.input-area input:focus { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.3); }
 
-          prevX = seg.x;
-          prevY = seg.y;
-        }
-      }
+#sendBtn {
+  background: var(--primary-color); border: none;
+  width: 45px; height: 45px; border-radius: 16px;
+  color: #030712; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  box-shadow: 0 0 15px rgba(125, 202, 255, 0.4);
+}
+#sendBtn:hover { transform: scale(1.1) rotate(5deg); }
+#sendBtn:active { transform: scale(0.95); }
 
-      draw(ctx, flicker) {
-        const grad = ctx.createLinearGradient(
-          this.core.x, this.core.y,
-          this.segments[this.segments.length - 1].x,
-          this.segments[this.segments.length - 1].y
-        );
-        grad.addColorStop(0, `rgba(0,200,255,${0.8 + flicker * 0.2})`);
-        grad.addColorStop(1, `rgba(150,0,255,${0.3 + flicker * 0.2})`);
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
 
-        ctx.save();
-        ctx.globalCompositeOperation = "lighter";
-        ctx.beginPath();
-        ctx.moveTo(this.core.x, this.core.y);
-        for (const p of this.segments) ctx.lineTo(p.x, p.y);
-        ctx.strokeStyle = grad;
-        ctx.lineWidth = 2 + flicker * 2;
-        ctx.shadowBlur = 25 + flicker * 45;
-        ctx.shadowColor = `rgba(80,200,255,${0.7})`;
-        ctx.stroke();
-        ctx.restore();
-      }
-    }
-
-    const tentacles = [];
-    const total = 36;
-    for (let i = 0; i < total; i++) {
-      const angle = (i / total) * Math.PI * 2;
-      tentacles.push(new Tentacle(core, angle));
-    }
-
-    // --- Animación principal ---
-    function animate(t) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      const timeSinceMove = Date.now() - lastMove;
-      const flicker = Math.random() * 0.6;
-
-      // Si el usuario no mueve el mouse, flota suavemente
-      const targetX = pointer.x + Math.sin(t * 0.001) * 100 * Math.min(timeSinceMove / 2000, 1);
-      const targetY = pointer.y + Math.cos(t * 0.0013) * 80 * Math.min(timeSinceMove / 2000, 1);
-
-      // Movimiento con inercia
-      const ax = (targetX - core.x) * 0.01;
-      const ay = (targetY - core.y) * 0.01;
-      core.vx += ax;
-      core.vy += ay;
-      core.vx *= 0.95;
-      core.vy *= 0.95;
-      core.x += core.vx;
-      core.y += core.vy;
-
-      // Glow central
-      ctx.save();
-      const g = ctx.createRadialGradient(core.x, core.y, 0, core.x, core.y, 150);
-      g.addColorStop(0, `rgba(120,210,255,${0.9 + flicker * 0.2})`);
-      g.addColorStop(0.3, `rgba(80,150,255,${0.3 + flicker * 0.2})`);
-      g.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(core.x, core.y, core.radius * (3.5 + flicker * 0.8), 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-
-      // Núcleo eléctrico
-      ctx.beginPath();
-      ctx.fillStyle = `rgba(180,220,255,${0.9 + flicker * 0.2})`;
-      ctx.arc(core.x, core.y, core.radius * (1.1 + flicker * 0.1), 0, Math.PI * 2);
-      ctx.fill();
-
-      // Tentáculos vivos
-      for (const tacle of tentacles) {
-        tacle.update(t);
-        tacle.draw(ctx, flicker);
-      }
-
-      requestAnimationFrame(animate);
-    }
-
-    requestAnimationFrame(animate);
-  </script>
-</body>
+@media (max-width: 600px) {
+  .chat-container { bottom: 0; width: 100%; border-radius: 28px 28px 0 0; }
+  .messages { height: 60vh; }
+  .menu { width: 100%; right: -100%; }
+  .menu-btn { top: 20px; right: 20px; }
+}
