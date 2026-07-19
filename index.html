@@ -68,6 +68,20 @@
       transform: scale(1.2);
       margin-right: 6px;
     }
+    .menu select {
+      width: 100%;
+      padding: 6px 8px;
+      border-radius: 6px;
+      border: none;
+      background: #0a1724;
+      color: #7dcaff;
+      font-size: 0.85em;
+      outline: none;
+    }
+    .menu input[type="range"] {
+      width: 100%;
+      accent-color: #7dcaff;
+    }
     .url-box {
       display: flex;
       flex-direction: column;
@@ -167,7 +181,21 @@
     </div>
 
     <div>
-      <label><input type="checkbox" id="vozRobotica" checked> 🤖 Voz robotrónica</label>
+      <label><input type="checkbox" id="vozActiva" checked> 🔊 Voz activada</label>
+    </div>
+
+    <div>
+      <label for="vozTipo">🗣️ Tipo de voz</label>
+      <select id="vozTipo">
+        <option value="robotica">🤖 Robotrónica</option>
+        <option value="hombre">👨 Hombre (latino/uruguayo)</option>
+        <option value="mujer">👩 Mujer (latina/uruguaya)</option>
+      </select>
+    </div>
+
+    <div>
+      <label for="vozVelocidad">⏩ Velocidad: <span id="velocidadValor">1.0x</span></label>
+      <input type="range" id="vozVelocidad" min="0.5" max="2" step="0.1" value="1">
     </div>
 
     <div class="url-box">
@@ -198,7 +226,10 @@
     const chat = document.getElementById("chat");
     const messages = document.getElementById("messages");
     const question = document.getElementById("question");
-    const vozRoboticaToggle = document.getElementById("vozRobotica");
+    const vozActivaToggle = document.getElementById("vozActiva");
+    const vozTipoSelect = document.getElementById("vozTipo");
+    const vozVelocidadSlider = document.getElementById("vozVelocidad");
+    const velocidadValor = document.getElementById("velocidadValor");
     const detenerVozBtn = document.getElementById("detenerVoz");
 
     menuBtn.addEventListener("click", () => menu.classList.toggle("open"));
@@ -229,11 +260,19 @@
       return { r, g, b };
     }
 
-    // === Voz robotrónica ===
-    let vozRobotica = vozRoboticaToggle.checked;
-    vozRoboticaToggle.addEventListener("change", e => {
-      vozRobotica = e.target.checked;
-      if (!vozRobotica) window.speechSynthesis.cancel();
+    // === Voz ===
+    let vozActiva = vozActivaToggle.checked;
+    let vozTipo = vozTipoSelect.value; // "robotica" | "hombre" | "mujer"
+    let vozVelocidad = parseFloat(vozVelocidadSlider.value);
+
+    vozActivaToggle.addEventListener("change", e => {
+      vozActiva = e.target.checked;
+      if (!vozActiva) window.speechSynthesis.cancel();
+    });
+    vozTipoSelect.addEventListener("change", e => vozTipo = e.target.value);
+    vozVelocidadSlider.addEventListener("input", e => {
+      vozVelocidad = parseFloat(e.target.value);
+      velocidadValor.textContent = vozVelocidad.toFixed(1) + "x";
     });
     detenerVozBtn.addEventListener("click", () => window.speechSynthesis.cancel());
 
@@ -253,23 +292,47 @@
       return chunks;
     }
 
-    function pickRoboVoice() {
+    // Los navegadores no exponen un acento "uruguayo" puntual: elegimos la
+    // variante de español rioplatense/latina más cercana disponible
+    // (es-UY, es-AR, es-419, es-MX...) y afinamos el tono según el género
+    // elegido. Si el sistema no tiene ninguna voz en español, se usa la
+    // que haya por defecto.
+    function pickVoice(tipo) {
       const voices = window.speechSynthesis.getVoices();
-      return voices.find(v => /es/i.test(v.lang)) || voices[0] || null;
+      if (!voices.length) return null;
+      const esVoices = voices.filter(v => /^es/i.test(v.lang));
+      const rioplatenses = esVoices.filter(v => /es-(UY|AR|419)/i.test(v.lang));
+      const latam = esVoices.filter(v => /es-(MX|US|CO|CL|PE)/i.test(v.lang));
+      const pool = rioplatenses.length ? rioplatenses : (latam.length ? latam : (esVoices.length ? esVoices : voices));
+
+      if (tipo === "mujer") {
+        return pool.find(v => /female|mujer|women|paulina|helena|sabina|monica|lucia|camila|valentina|elena/i.test(v.name)) || pool[0];
+      }
+      if (tipo === "hombre") {
+        return pool.find(v => /male|hombre|men\b|jorge|diego|juan|carlos|pablo|enrique|miguel/i.test(v.name)) || pool[0];
+      }
+      return pool[0]; // robotica: el efecto lo da el pitch, la voz de base da igual
+    }
+
+    function pitchFor(tipo) {
+      if (tipo === "hombre") return 0.75;
+      if (tipo === "mujer") return 1.3;
+      return 0.15; // robotica: grave y metálico
     }
 
     function speakRobotic(text, { interrupt = true } = {}) {
-      if (!vozRobotica || !text || !("speechSynthesis" in window)) return;
+      if (!vozActiva || !text || !("speechSynthesis" in window)) return;
       if (interrupt) window.speechSynthesis.cancel();
-      const roboVoice = pickRoboVoice();
+      const voice = pickVoice(vozTipo);
+      const pitch = pitchFor(vozTipo);
       const chunks = chunkText(text);
       for (const chunk of chunks) {
         const utterance = new SpeechSynthesisUtterance(chunk);
-        utterance.lang = "es-ES";
-        utterance.pitch = 0.15;  // grave y metálico
-        utterance.rate = 0.95;
+        utterance.lang = (voice && voice.lang) || "es-UY";
+        utterance.pitch = pitch;
+        utterance.rate = vozVelocidad;
         utterance.volume = 1;
-        if (roboVoice) utterance.voice = roboVoice;
+        if (voice) utterance.voice = voice;
         window.speechSynthesis.speak(utterance);
       }
     }
