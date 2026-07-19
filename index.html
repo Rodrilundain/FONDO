@@ -277,26 +277,62 @@
     // === Documento remoto ===
     let documentoCargado = "";
 
+    function htmlToText(html) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, "text/html");
+      return doc.body.innerText.replace(/\s+/g, " ").trim();
+    }
+
+    // AllOrigins es gratuito pero poco confiable (sin SLA, rate-limit agresivo,
+    // suele devolver contents:null). Probamos primero lectores más estables y
+    // caemos a AllOrigins solo como último recurso.
+    const DOC_READERS = [
+      async url => {
+        const res = await fetch("https://r.jina.ai/" + url);
+        if (!res.ok) throw new Error("r.jina.ai respondió " + res.status);
+        return (await res.text()).trim();
+      },
+      async url => {
+        const res = await fetch("https://corsproxy.io/?url=" + encodeURIComponent(url));
+        if (!res.ok) throw new Error("corsproxy.io respondió " + res.status);
+        return htmlToText(await res.text());
+      },
+      async url => {
+        const res = await fetch("https://api.allorigins.win/get?url=" + encodeURIComponent(url));
+        if (!res.ok) throw new Error("allorigins respondió " + res.status);
+        const data = await res.json();
+        if (!data || !data.contents) throw new Error("allorigins devolvió contents vacío");
+        return htmlToText(data.contents);
+      }
+    ];
+
+    async function fetchDocumentText(url) {
+      let lastError;
+      for (const reader of DOC_READERS) {
+        try {
+          const text = await reader(url);
+          if (text) return text;
+        } catch (err) {
+          lastError = err;
+          console.warn("Lector de documento falló, probando el siguiente:", err);
+        }
+      }
+      throw lastError || new Error("No se obtuvo contenido del documento.");
+    }
+
     async function loadDocumentFromUrl(url) {
       url = (url || "").trim();
       if (!url) return;
       status.textContent = "Cargando documento...";
       try {
-        const proxy = "https://api.allorigins.win/get?url=" + encodeURIComponent(url);
-        const res = await fetch(proxy);
-        const data = await res.json();
-        const html = data.contents;
-
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, "text/html");
-        documentoCargado = doc.body.innerText.replace(/\s+/g, " ").trim();
-
+        documentoCargado = await fetchDocumentText(url);
         status.textContent = "✅ Documento cargado correctamente.";
         chat.style.display = "flex";
         speakRobotic(`Documento cargado correctamente. Iniciando lectura. ${documentoCargado}`);
       } catch (err) {
         console.error(err);
-        status.textContent = "⚠️ Error al leer el documento.";
+        documentoCargado = "";
+        status.textContent = "⚠️ Error al leer el documento. Probá con otra URL o verificá que sea pública.";
         speakRobotic("Error al leer el documento.");
       }
     }
