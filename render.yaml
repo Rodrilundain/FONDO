@@ -18,3 +18,14 @@ services:
       # texto y voz del navegador, sin la voz de IA.
       - key: ELEVENLABS_API_KEY
         sync: false
+      # Opcionales: voice_id de ElevenLabs (Voice Library) para que la voz
+      # de IA hable en español en vez del respaldo en inglés. Se pueden
+      # dejar vacías y completar después sin rehacer el deploy.
+      - key: ELEVENLABS_VOICE_ID_HOMBRE
+        sync: false
+      - key: ELEVENLABS_VOICE_ID_MUJER
+        sync: false
+      # Opcional: solo si servís el frontend desde un dominio propio además
+      # de GitHub Pages y localhost.
+      - key: ALLOWED_ORIGIN
+        sync: false

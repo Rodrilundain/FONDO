@@ -6,6 +6,20 @@ dotenv.config();
 
 const app = express();
 
+// Cabeceras de seguridad básicas (sin agregar la dependencia "helmet" para
+// no sumar peso de más): evitan que el navegador adivine el tipo de
+// contenido, que la respuesta se embeba en un iframe ajeno, y que se filtre
+// la URL completa como referrer al pedir /tts o /ask desde otro sitio. Van
+// antes que CORS para que se apliquen también en las respuestas de error
+// (por ejemplo, un 403 por origen no permitido).
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  next();
+});
+
 // CORS: solo el sitio publicado en GitHub Pages y localhost (para
 // desarrollo). ALLOWED_ORIGIN permite agregar un dominio propio sin tocar
 // código (por ejemplo si en el futuro esto se sirve desde otro dominio).
@@ -110,13 +124,13 @@ app.post("/ask", async (req, res) => {
   }
 });
 
-// Voces de ElevenLabs por defecto (premade, en inglés pero con buen soporte
-// multilingüe). Se pueden reemplazar por cualquier voice_id de la Voice
-// Library de ElevenLabs (por ejemplo una con acento en español) seteando
-// ELEVENLABS_VOICE_ID_HOMBRE / ELEVENLABS_VOICE_ID_MUJER como variables de
-// entorno, sin tocar código.
-const VOZ_HOMBRE = process.env.ELEVENLABS_VOICE_ID_HOMBRE || "pNInz6obpgDQGcFmaJgB"; // Adam
-const VOZ_MUJER = process.env.ELEVENLABS_VOICE_ID_MUJER || "21m00Tcm4TlvDq8ikWAM"; // Rachel
+// La voz real a usar es SIEMPRE la que venga en ELEVENLABS_VOICE_ID_HOMBRE /
+// ELEVENLABS_VOICE_ID_MUJER (variables de entorno, configurables en Render
+// sin tocar código — recomendado: elegir una voz en español desde la Voice
+// Library de ElevenLabs). Los IDs de acá abajo son solo un respaldo en
+// inglés para que /tts no rompa si todavía no configuraste esas variables.
+const VOZ_HOMBRE = process.env.ELEVENLABS_VOICE_ID_HOMBRE || "pNInz6obpgDQGcFmaJgB"; // respaldo: Adam (en inglés)
+const VOZ_MUJER = process.env.ELEVENLABS_VOICE_ID_MUJER || "21m00Tcm4TlvDq8ikWAM"; // respaldo: Rachel (en inglés)
 
 app.post("/tts", async (req, res) => {
   const { text, tipo } = req.body || {};
@@ -144,11 +158,17 @@ app.post("/tts", async (req, res) => {
       body: JSON.stringify({
         text,
         model_id: "eleven_multilingual_v2",
+        // Ajustado para una voz más natural y menos "actuada": stability
+        // alta = menos variación entre generaciones, style bajo = sin
+        // exagerar la entonación, speed levemente por debajo de 1 = ritmo
+        // tranquilo (el modelo lo aplica él mismo; por eso el frontend NO
+        // debe volver a bajarle la velocidad al audio).
         voice_settings: {
-          stability: 0.55,
-          similarity_boost: 0.75,
-          style: 0.3,
-          use_speaker_boost: true
+          stability: 0.68,
+          similarity_boost: 0.78,
+          style: 0,
+          use_speaker_boost: true,
+          speed: 0.92
         }
       })
     });
