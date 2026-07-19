@@ -99,7 +99,11 @@ js/documentos.js    Carga, validación y extracción de texto de documentos
 js/chat.js          Preguntas al backend, RAG simple, UI del chat
 js/app.js           Menú, configuración del backend, arranque general
 server/server.js    Backend Express: /ask (Groq), /tts y /tts/voices
-                    (ElevenLabs), /fetch-document (proxy de URLs), /health
+                    (ElevenLabs), /fetch-document (proxy de URLs),
+                    /voice/piper (voz local, ver abajo), /health
+server/src/voice/   Módulo de voz local con Piper (motor gratis, sin
+                    cuota, corre en el propio servidor) — ver su README
+server/models/piper/ Dónde poner el modelo de voz de Piper descargado
 render.yaml         Blueprint de despliegue en Render
 ```
 
@@ -120,6 +124,41 @@ mantener el proyecto simple.
 - [Groq](https://groq.com/) (Llama 3.3 70B) para responder preguntas —
   gratis, sin tarjeta de crédito.
 - [ElevenLabs](https://elevenlabs.io/) (opcional) para la voz de IA.
+- [Piper](https://github.com/OHF-Voice/piper1-gpl) (opcional, GPL-3.0)
+  para una voz de IA que corre local, en el propio servidor, sin costo ni
+  cuota — ver `server/src/voice/README.md`.
+
+## Voz local con Piper (motor opcional, gratis, sin cuota)
+
+Además de la voz del navegador y ElevenLabs, MedusaLee tiene un tercer
+motor de voz opcional: [Piper](https://github.com/OHF-Voice/piper1-gpl),
+que corre 100% en el servidor (no manda texto a ningún servicio externo,
+a diferencia de ElevenLabs) usando un modelo de voz descargado una sola
+vez. Vive en `server/src/voice/` como un módulo separado, con su propia
+interfaz (`VoiceService`) pensada para poder sumar otros motores más
+adelante (OpenVoice, MeloTTS quedan como extensión futura, sin
+dependencias instaladas todavía).
+
+Está desactivado por defecto (`TTS_ENABLED=false`): sin configurarlo,
+MedusaLee sigue funcionando exactamente igual que antes.
+
+Documentación completa (instalación, licencias, voces en español
+disponibles, comandos de prueba) en
+[`server/src/voice/README.md`](server/src/voice/README.md). Resumen
+rápido:
+
+```bash
+pip install piper-tts                                    # instala Piper
+python -m piper.download_voices                          # lista voces disponibles
+python -m piper.download_voices es_AR-daniela-high \
+  --download-dir server/models/piper                     # descarga una voz
+node server/test-voice.mjs "Hola, Rodrigo."               # prueba solo la voz
+```
+
+**Nota sobre Render**: el deploy gratuito actual (`runtime: node`) no
+instala Python ni descarga modelos de voz — Piper es para correr
+MedusaLee localmente o en un servidor propio con Python disponible, no
+para este backend desplegado en Render tal como está configurado hoy.
 
 ## Modos de voz
 
@@ -293,6 +332,21 @@ repositorio, apuntando a "GitHub Actions" como origen.
   pero no "fija" esa IP para el pedido real — en teoría, un ataque de DNS
   rebinding (el dominio cambia de IP entre la resolución y la descarga)
   podría eludir el chequeo. Es una limitación conocida, no algo oculto.
+- **Voz local Piper — catálogo de voces no verificable desde este
+  entorno de desarrollo**: el catálogo real de voces (`rhasspy/piper-voices`)
+  vive únicamente en Hugging Face, bloqueado por la política de red del
+  entorno donde se implementó esta integración. No se pudo confirmar en
+  vivo si `es_AR-daniela` existe ni escuchar ninguna voz en español real;
+  `server/src/voice/README.md` explica cómo verificarlo vos mismo en
+  segundos. Lo que sí se probó de punta a punta ahí es el mecanismo (Piper
+  instalado, texto por stdin, generación de un `.wav` válido), con el
+  modelo de prueba que trae el propio proyecto Piper para sus tests (que
+  genera silencio, no habla).
+- **Voz local Piper — sin verificar en Windows**: el código usa `spawn`
+  con rutas y argumentos (nunca un string de shell armado a mano), pero
+  el comportamiento específico en Windows (rutas con espacios,
+  reproducción vía PowerShell) no se pudo ejecutar en este entorno de
+  desarrollo (solo Linux disponible).
 - **Detección de PDF escaneado sin OCR automático todavía**: MedusaLee
   detecta con una heurística (pocos caracteres de texto por página) si un
   PDF parece ser una imagen escaneada y avisa al usuario, pero **no
@@ -424,6 +478,10 @@ pendiente). Esta ronda se probó manualmente así:
 | `quitarEncabezadosPiesRepetidos` (encabezado repetido en la mayoría de páginas) | Función pura extraída y probada en Node | Recorta el encabezado repetido en las páginas que lo tienen, deja intacta la página que no lo tiene; se encontró y corrigió 1 bug real (comparaba 80 caracteres exactos en vez de las primeras palabras, por lo que casi nunca coincidía con encabezados cortos seguidos de contenido variable) |
 | `fragmentarConPaginas` (fragmentos largos de una misma página se dividen conservando el número de página) | Función pura extraída y probada en Node | Cada fragmento resultante de una página larga conserva `pagina` correctamente |
 | `calcularBM25` (prioriza término específico sobre términos comunes; sin coincidencias da score 0) | Función pura extraída y probada en Node | El fragmento con el término más específico obtiene el score más alto; sin coincidencias, todos los scores dan 0 |
+| Voz local Piper: texto normal, tildes/ñ/¿/¡, texto vacío, texto largo (~4000 caracteres), Piper no instalado, modelo inexistente, varias solicitudes consecutivas | `node --test` (23 tests) + CLI (`node test-voice.mjs`) + servidor Express real, usando `piper-tts` instalado de verdad en el entorno de pruebas con el modelo de prueba que trae el propio Piper (genera silencio, no es una voz real) | Los 23 tests automatizados pasan (20 siempre + 3 que solo corren si hay un Piper real configurado, que en esta sesión sí lo hubo); WAV real generado con cabecera RIFF válida; 3 solicitudes concurrentes generan 3 archivos sin colisión de nombres; texto con tildes/ñ/¿/¡ no rompe nada |
+| Voz local Piper: motor desactivado (`TTS_ENABLED` sin definir) | Servidor Express real, `/health` y `POST /voice/piper` | `/health` informa `vozLocalConfigurada:false`; el endpoint devuelve 404 con `success:false` sin intentar ejecutar Piper; `/ask` sigue funcionando exactamente igual que antes (sin regresión) |
+| Voz local Piper: endpoint completo con el ejemplo del enunciado ("Hola, Rodrigo. El sistema está funcionando correctamente.") | Servidor Express real, `POST /voice/piper` + descarga del audio vía `GET /voice/piper/audio/:nombre` | Genera el `.wav`, lo sirve con `Content-Type: audio/wav` y bytes RIFF válidos; intento de path traversal en el nombre de archivo (`../../server.js`) rechazado con 400 |
+| Voz local Piper: fallo de escritura por permisos | No se pudo forzar un error real de permisos porque este entorno corre como root (root ignora los bits de permisos de archivo en Linux) | **No verificado con un fallo de permisos real** — el camino de manejo de errores es el mismo `try/catch` ya probado para "modelo inexistente"/"Piper no instalado" (cualquier excepción de `mkdir`/`spawn` se traduce a `success:false` sin crashear), pero no se pudo confirmar específicamente ese escenario |
 
 No se fabricó ningún resultado: donde no se pudo ejecutar la prueba real
 (PDF/DOCX real, voces de síntesis del navegador, calidad real de una voz

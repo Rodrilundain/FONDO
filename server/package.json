@@ -8,7 +8,9 @@
     "node": ">=18"
   },
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test:voice": "node --test src/voice/__tests__/*.test.mjs",
+    "voice": "node test-voice.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",

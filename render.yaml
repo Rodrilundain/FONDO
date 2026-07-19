@@ -54,3 +54,12 @@ services:
       # de GitHub Pages y localhost.
       - key: ALLOWED_ORIGIN
         sync: false
+      # NOTA sobre la voz local con Piper (TTS_ENABLED/PIPER_*, ver
+      # server/src/voice/README.md): a propósito NO se agrega acá como
+      # variable de Render. Este servicio usa runtime: node y
+      # buildCommand: npm install — no instala Python ni descarga ningún
+      # modelo de voz durante el deploy, así que activar TTS_ENABLED en
+      # este servicio tal como está configurado hoy no serviría de nada
+      # (Piper no estaría instalado). Piper es para correr MedusaLee
+      # localmente o en un servidor propio con Python disponible, no para
+      # este deploy gratuito en Render.

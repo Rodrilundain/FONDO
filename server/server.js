@@ -4,6 +4,9 @@ import rateLimit from "express-rate-limit";
 import dotenv from "dotenv";
 import crypto from "node:crypto";
 import dns from "node:dns/promises";
+import path from "node:path";
+import { access } from "node:fs/promises";
+import { textToSpeech, vozLocalHabilitada, rutaDirectorioAudioPiper } from "./src/voice/voiceService.js";
 dotenv.config();
 
 const app = express();
@@ -444,6 +447,64 @@ app.post("/fetch-document", async (req, res) => {
   }
 });
 
+// === Voz local (Piper), opcional y separada de ElevenLabs ===
+// No manda texto a ningún servicio externo: corre 100% en este servidor.
+// Requiere TTS_ENABLED=true y Piper instalado (ver server/src/voice/README.md).
+// Si no está configurado, responde con el mismo contrato
+// {success:false, error} en vez de un 500 — nunca tira abajo el resto del
+// backend por un problema de este motor opcional.
+const MAX_TEXTO_VOZ_LOCAL = 4000;
+const limiterVoicePiper = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Demasiados pedidos de voz local en poco tiempo. Esperá un minuto." }
+});
+app.use(["/voice/piper"], limiterVoicePiper);
+
+app.post("/voice/piper", async (req, res) => {
+  const { text, voice } = req.body || {};
+  if (!esTextoValido(text, MAX_TEXTO_VOZ_LOCAL)) {
+    return res.status(400).json({
+      success: false,
+      audioPath: null,
+      engine: "piper",
+      error: `Falta texto válido (máximo ${MAX_TEXTO_VOZ_LOCAL} caracteres).`
+    });
+  }
+
+  const resultado = await textToSpeech({ text, voice });
+  if (!resultado.success) {
+    // 404 si es simplemente que el motor no está habilitado/configurado
+    // (esperable, no un error del servidor); 502 para cualquier otra falla
+    // real de Piper (no instalado, modelo roto, etc).
+    const status = /desactivada|PIPER_EXECUTABLE|PIPER_MODEL_PATH/.test(resultado.error) ? 404 : 502;
+    return res.status(status).json(resultado);
+  }
+
+  const nombreArchivo = path.basename(resultado.audioPath);
+  res.json({ ...resultado, audioUrl: `/voice/piper/audio/${nombreArchivo}` });
+});
+
+// Sirve el .wav ya generado. El nombre de archivo se valida contra el
+// patrón propio del módulo (medusa-piper-<timestamp>-<hex>.wav) antes de
+// unirlo a la carpeta de audio, así un parámetro raro en la URL nunca
+// puede pedir un archivo fuera de esa carpeta.
+const NOMBRE_AUDIO_PIPER_VALIDO = /^medusa-piper-\d+-[0-9a-f]+\.wav$/;
+app.get("/voice/piper/audio/:nombre", async (req, res) => {
+  if (!NOMBRE_AUDIO_PIPER_VALIDO.test(req.params.nombre)) {
+    return res.status(400).json({ error: "Nombre de archivo inválido." });
+  }
+  const ruta = path.join(rutaDirectorioAudioPiper(), req.params.nombre);
+  try {
+    await access(ruta);
+  } catch {
+    return res.status(404).json({ error: "Ese audio ya no está disponible (puede haberse limpiado automáticamente)." });
+  }
+  res.type("audio/wav").sendFile(ruta);
+});
+
 // Estado del servidor: para que el frontend sepa si está despierto y qué
 // claves tiene configuradas, sin exponer las claves en sí.
 app.get("/health", (_req, res) => {
@@ -452,7 +513,8 @@ app.get("/health", (_req, res) => {
     groqConfigurado: Boolean(process.env.GROQ_API_KEY),
     elevenlabsConfigurado: Boolean(process.env.ELEVENLABS_API_KEY),
     vozHombreConfigurada: Boolean(VOZ_HOMBRE),
-    vozMujerConfigurada: Boolean(VOZ_MUJER)
+    vozMujerConfigurada: Boolean(VOZ_MUJER),
+    vozLocalConfigurada: vozLocalHabilitada()
   });
 });
 
