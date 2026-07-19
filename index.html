@@ -256,8 +256,9 @@
     </div>
 
     <div class="url-box">
-      <label for="backendUrlInput">🔌 Backend de preguntas</label>
+      <label for="backendUrlInput">🔌 Backend de preguntas (URL de Render, NO un documento)</label>
       <input type="text" id="backendUrlInput" placeholder="https://tu-backend.onrender.com">
+      <div class="status" id="backendStatus"></div>
     </div>
   </div>
 
@@ -299,6 +300,7 @@
     const resumeBtn = document.getElementById("resumeBtn");
     const detenerVozBtn = document.getElementById("detenerVoz");
     const backendUrlInput = document.getElementById("backendUrlInput");
+    const backendStatus = document.getElementById("backendStatus");
 
     menuBtn.addEventListener("click", () => menu.classList.toggle("open"));
 
@@ -363,11 +365,23 @@
     });
 
     // === Backend de preguntas (configurable, se guarda en el navegador) ===
+    // Error común: pegar acá el link del documento en vez de la URL del
+    // servidor de Render. Avisamos si el link tiene pinta de documento.
+    function checkBackendUrl(url) {
+      if (!url) { backendStatus.textContent = ""; return; }
+      const pareceDocumento = /docs\.google\.com|drive\.google\.com|dropbox\.com|\/document\/|\/file\/d\//i.test(url);
+      backendStatus.textContent = pareceDocumento
+        ? "⚠️ Eso parece un link a un documento, no la URL de tu backend de Render."
+        : "";
+    }
+
     let BACKEND_URL = localStorage.getItem("medusaBackendUrl") || "";
     backendUrlInput.value = BACKEND_URL;
+    checkBackendUrl(BACKEND_URL);
     backendUrlInput.addEventListener("change", () => {
       BACKEND_URL = backendUrlInput.value.trim().replace(/\/+$/, "");
       localStorage.setItem("medusaBackendUrl", BACKEND_URL);
+      checkBackendUrl(BACKEND_URL);
     });
 
     function chunkText(text, maxLen = 220) {
