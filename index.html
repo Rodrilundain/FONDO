@@ -242,8 +242,8 @@
     </div>
 
     <div class="url-box">
-      <label for="docFile">📁 Subir archivo (.txt, .md, .pdf)</label>
-      <input type="file" id="docFile" accept=".txt,.md,.pdf">
+      <label for="docFile">📁 Subir archivo (.txt, .md, .pdf, .docx)</label>
+      <input type="file" id="docFile" accept=".txt,.md,.pdf,.docx">
     </div>
 
     <div class="status" id="status">Sin documento cargado</div>
@@ -272,6 +272,7 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://unpkg.com/mammoth@1.6.0/mammoth.browser.min.js"></script>
   <script>
     if (window.pdfjsLib) {
       pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -497,11 +498,108 @@
       }
     ];
 
-    async function fetchDocumentText(url) {
+    async function extractPdfText(arrayBuffer) {
+      if (!window.pdfjsLib) throw new Error("No se pudo cargar el lector de PDF.");
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let text = "";
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        text += content.items.map(item => item.str).join(" ") + "\n";
+      }
+      return text;
+    }
+
+    async function extractDocxText(arrayBuffer) {
+      if (!window.mammoth) throw new Error("No se pudo cargar el lector de Word.");
+      const result = await mammoth.extractRawText({ arrayBuffer });
+      return result.value;
+    }
+
+    // Detecta pdf/docx/txt por extensión (nombre de archivo local o URL).
+    function detectFileTypeByExtension(nameOrUrl) {
+      const clean = nameOrUrl.split(/[?#]/)[0].toLowerCase();
+      if (clean.endsWith(".pdf")) return "pdf";
+      if (clean.endsWith(".docx")) return "docx";
+      if (clean.endsWith(".txt") || clean.endsWith(".md")) return "text";
+      return null;
+    }
+
+    // Cuando la URL no tiene extensión reconocible (ej: un link de Drive
+    // reescrito), se detecta por el content-type o por los primeros bytes
+    // del archivo (%PDF... para PDF, PK.. porque un .docx es un zip).
+    function detectFileTypeByContent(contentType, buffer) {
+      if (contentType) {
+        if (contentType.includes("pdf")) return "pdf";
+        if (contentType.includes("wordprocessingml")) return "docx";
+        if (contentType.includes("text/plain")) return "text";
+      }
+      const head = new Uint8Array(buffer.slice(0, 4));
+      if (head[0] === 0x25 && head[1] === 0x50 && head[2] === 0x44 && head[3] === 0x46) return "pdf";
+      if (head[0] === 0x50 && head[1] === 0x4b) return "docx";
+      return null;
+    }
+
+    async function extractTextFromArrayBuffer(buffer, tipo) {
+      if (tipo === "pdf") return extractPdfText(buffer);
+      if (tipo === "docx") return extractDocxText(buffer);
+      return new TextDecoder("utf-8").decode(buffer);
+    }
+
+    // Convierte un link de Google Drive (vista/compartir) en un link de
+    // descarga directa, para poder bajar los bytes reales del archivo.
+    function driveDirectDownload(url) {
+      if (!/drive\.google\.com/.test(url)) return url;
+      const m = url.match(/\/file\/d\/([^/]+)/) || url.match(/[?&]id=([^&]+)/);
+      return m ? `https://drive.google.com/uc?export=download&id=${m[1]}` : url;
+    }
+
+    // Proxies para descargar el archivo binario: primero intento directo
+    // (funciona si el servidor permite CORS), y si falla, dos proxies
+    // públicos de respaldo.
+    const BINARY_PROXIES = [
+      url => url,
+      url => "https://corsproxy.io/?url=" + encodeURIComponent(url),
+      url => "https://api.allorigins.win/raw?url=" + encodeURIComponent(url)
+    ];
+
+    async function fetchBinary(url) {
+      let lastError;
+      for (const buildUrl of BINARY_PROXIES) {
+        try {
+          const res = await fetch(buildUrl(url));
+          if (!res.ok) throw new Error("respondió " + res.status);
+          const buffer = await res.arrayBuffer();
+          return { buffer, contentType: res.headers.get("content-type") || "" };
+        } catch (err) {
+          lastError = err;
+          console.warn("Descarga binaria falló, probando el siguiente proxy:", err);
+        }
+      }
+      throw lastError || new Error("No se pudo descargar el archivo.");
+    }
+
+    async function fetchDocumentText(originalUrl) {
+      const url = driveDirectDownload(originalUrl);
+      const tipoPorExtension = detectFileTypeByExtension(url);
+
+      // Si tiene extensión conocida (.pdf/.docx/.txt) o es un link de Drive
+      // reescrito, primero probamos descargarlo como archivo binario.
+      if (tipoPorExtension || url !== originalUrl) {
+        try {
+          const { buffer, contentType } = await fetchBinary(url);
+          const tipo = tipoPorExtension || detectFileTypeByContent(contentType, buffer);
+          if (tipo) return await extractTextFromArrayBuffer(buffer, tipo);
+        } catch (err) {
+          console.warn("Descarga como archivo falló, probando como página web:", err);
+        }
+      }
+
+      // Fallback: tratarlo como una página web genérica.
       let lastError;
       for (const reader of DOC_READERS) {
         try {
-          const text = await reader(url);
+          const text = await reader(originalUrl);
           if (text) return text;
         } catch (err) {
           lastError = err;
@@ -516,7 +614,8 @@
       if (!url) return;
       status.textContent = "Cargando documento...";
       try {
-        documentoCargado = await fetchDocumentText(url);
+        documentoCargado = (await fetchDocumentText(url)).replace(/\s+/g, " ").trim();
+        if (!documentoCargado) throw new Error("El documento está vacío.");
         status.textContent = "✅ Documento cargado correctamente.";
         chat.style.display = "flex";
         speakRobotic(`Documento cargado correctamente. Iniciando lectura. ${documentoCargado}`);
@@ -530,30 +629,14 @@
 
     docUrlInput.addEventListener("change", () => loadDocumentFromUrl(docUrlInput.value));
 
-    async function extractPdfText(arrayBuffer) {
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      let text = "";
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const content = await page.getTextContent();
-        text += content.items.map(item => item.str).join(" ") + "\n";
-      }
-      return text;
-    }
-
     docFileInput.addEventListener("change", async () => {
       const file = docFileInput.files[0];
       if (!file) return;
       status.textContent = "Leyendo archivo...";
       try {
-        let text;
-        if (/\.pdf$/i.test(file.name) || file.type === "application/pdf") {
-          if (!window.pdfjsLib) throw new Error("No se pudo cargar el lector de PDF.");
-          text = await extractPdfText(await file.arrayBuffer());
-        } else {
-          text = await file.text();
-        }
-        documentoCargado = text.replace(/\s+/g, " ").trim();
+        const tipo = detectFileTypeByExtension(file.name) || "text";
+        documentoCargado = (await extractTextFromArrayBuffer(await file.arrayBuffer(), tipo))
+          .replace(/\s+/g, " ").trim();
         if (!documentoCargado) throw new Error("El archivo está vacío.");
 
         status.textContent = `✅ "${file.name}" cargado correctamente.`;
