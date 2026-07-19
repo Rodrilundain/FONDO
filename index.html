@@ -75,9 +75,11 @@
 
     <div>
       <label><input type="checkbox" id="vozIA" checked> 🧠 Voz IA (ElevenLabs) en las respuestas del chat</label>
-      <div class="status">Opcional: requiere el backend con ELEVENLABS_API_KEY configurada. Si falla o no está disponible, se avisa y se usa automáticamente la voz del navegador. La lectura del documento completo siempre usa la voz del navegador (gratis, sin límite de caracteres).</div>
+      <div class="status">Opcional: requiere el backend con ELEVENLABS_API_KEY y una voz en español configuradas. Si falla o no está disponible, se avisa y se usa automáticamente la voz del navegador. Nunca se usa en silencio una voz en inglés.</div>
+      <label><input type="checkbox" id="lecturaDocumentoIA"> 📖 Leer el documento completo con voz IA (opcional, consume cuota)</label>
+      <div class="status" id="vocesIADisponibles"></div>
       <div class="btn-row">
-        <button type="button" id="probarVozBtn" class="btn-stop">🔊 Probar voz IA (chat)</button>
+        <button type="button" id="probarVozBtn" class="btn-stop">🔊 Probar voz IA</button>
         <button type="button" id="leerFragmentoBtn" class="btn-stop">✂️ Leer fragmento con voz IA</button>
       </div>
       <div class="status" id="vozEstado" role="status" aria-live="polite"></div>

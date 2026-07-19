@@ -345,6 +345,101 @@ function chunkText(text, maxLen = 220) {
   return dividirTextoParaHabla(text, maxLen);
 }
 
+// === Preparación de texto para la voz de IA (ElevenLabs) ===
+// dividirTextoParaHabla (arriba) solo evita cortar oraciones a la mitad;
+// esto además LIMPIA el texto para que se escuche natural: saca marcado
+// que no debe pronunciarse, convierte viñetas/URLs/emails en frases
+// habladas, y adapta números y siglas. No cambia el significado del
+// texto, solo cómo se dice en voz alta.
+//
+// El diccionario de pronunciación es un punto de partida razonable, NO
+// validado de oído contra la API real de ElevenLabs (sin acceso a
+// internet en este entorno no se pudo escuchar el resultado) — conviene
+// ajustarlo después de probarlo con la voz configurada.
+const DICCIONARIO_PRONUNCIACION = {
+  "MedusaLee": "Medusa Li",
+  "Groq": "Grok",
+  "GitHub": "Guitjab",
+  "JavaScript": "Yavascript",
+  "Node.js": "Node yeis",
+  "Apps Script": "Aps Scrip",
+  "API": "A, P, I",
+  "PDF": "P, D, F",
+  "DOCX": "documento de Word",
+  "Uruguay": "Uruguay"
+};
+
+// Se puede agregar o pisar entradas en tiempo de ejecución sin tocar el
+// diccionario base (por ejemplo desde la consola, para probar variantes).
+function agregarPronunciacion(termino, comoSeDice) {
+  DICCIONARIO_PRONUNCIACION[termino] = comoSeDice;
+}
+
+const MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+
+function humanizarFecha(dia, mes, anio) {
+  const d = parseInt(dia, 10), m = parseInt(mes, 10);
+  if (m < 1 || m > 12) return null;
+  const anioCompleto = anio.length === 2 ? `20${anio}` : anio;
+  return `${d} de ${MESES_ES[m - 1]} de ${anioCompleto}`;
+}
+
+function prepararTextoParaTTS(textoOriginal, opciones = {}) {
+  if (!textoOriginal) return "";
+  let texto = textoOriginal;
+
+  // 1) Markdown que no debe pronunciarse: encabezados, negrita, cursiva,
+  // código, tachado — se conserva el texto, se saca el marcado.
+  texto = texto
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/~~([^~]+)~~/g, "$1")
+    .replace(/[*_#~]{2,}/g, "");
+
+  // 2) Emojis puramente decorativos: se sacan (no aportan nada al decirlos).
+  texto = texto.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}]/gu, "");
+
+  // 3) Viñetas y numeración de listas al principio de línea -> se quita el
+  // símbolo, la frase queda como texto corrido natural.
+  texto = texto.replace(/^\s*([-*•▪◦]|\d+[.)])\s+/gm, "");
+
+  // 4) URLs largas -> no se leen letra por letra.
+  texto = texto.replace(/https?:\/\/[^\s]+/gi, "enlace disponible");
+
+  // 5) Emails -> pronunciación entendible ("nombre arroba dominio punto com").
+  texto = texto.replace(/([a-zA-Z0-9._%+-]+)@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g, (_, usuario, dominio) => {
+    return `${usuario} arroba ${dominio.replace(/\./g, " punto ")}`;
+  });
+
+  // 6) Fechas DD/MM/YYYY o DD.MM.YYYY -> "19 de julio de 2026".
+  texto = texto.replace(/\b(\d{1,2})[./](\d{1,2})[./](\d{2,4})\b/g, (m, d, mo, y) => humanizarFecha(d, mo, y) || m);
+
+  // 7) Porcentajes y moneda.
+  texto = texto
+    .replace(/(\d+(?:[.,]\d+)?)\s*%/g, "$1 por ciento")
+    .replace(/(?:U\$S|USD)\s?(\d+(?:[.,]\d+)?)/gi, "$1 dólares")
+    .replace(/\$\s?(\d+(?:[.,]\d+)?)/g, "$1 pesos");
+
+  // 8) Diccionario de pronunciación (términos técnicos y nombres propios).
+  for (const [termino, comoSeDice] of Object.entries(DICCIONARIO_PRONUNCIACION)) {
+    const re = new RegExp(`\\b${termino.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g");
+    texto = texto.replace(re, comoSeDice);
+  }
+
+  // 9) Pausas moderadas entre párrafos (double newline) — una elipsis
+  // genera una pausa breve y natural sin necesitar SSML.
+  texto = texto.replace(/\n{2,}/g, "... ").replace(/\n/g, " ");
+
+  // 10) Se conservan "?" y "!" (aportan entonación); se limpian espacios
+  // repetidos y puntuación duplicada (por ejemplo "párrafo.... Segundo",
+  // cuando el párrafo ya terminaba en punto antes de agregar la pausa).
+  texto = texto.replace(/\.{2,}/g, "...").replace(/[ \t]{2,}/g, " ").trim();
+
+  return texto;
+}
+
 // === Lectura dinámica: analiza cada fragmento y ajusta pitch/velocidad/
 // pausas según el tipo de contenido, en vez de leer todo con el mismo
 // ritmo. Los ajustes son multiplicadores sobre el pitch/velocidad del
@@ -403,7 +498,14 @@ function detenerTodoAhora() {
   lecturaToken++; // invalida cualquier onend/avance pendiente de la lectura
   if ("speechSynthesis" in window) window.speechSynthesis.cancel();
   if (audioIAActivo) {
-    try { audioIAActivo.pause(); URL.revokeObjectURL(audioIAActivo.src); } catch {}
+    try {
+      audioIAActivo.pause();
+      // Los audios de bloques de documento (motor de IA) están guardados
+      // en cacheAudioIA para poder repetirlos sin volver a gastar cuota —
+      // NO se revoca ese URL acá (marcados con dataset.cacheado). Los
+      // audios "sueltos" (respuesta del chat, muestra) sí se liberan.
+      if (audioIAActivo.dataset?.cacheado !== "1") URL.revokeObjectURL(audioIAActivo.src);
+    } catch {}
     audioIAActivo = null;
   }
 }
@@ -412,6 +514,7 @@ if (detenerVozBtn) {
     detenerTodoAhora();
     lecturaEnCurso = false;
     lecturaPausada = false;
+    lecturaIAActiva = false;
     marcarEstadoLectura("⏹️ Detenido.");
     actualizarSubtitulo("");
     sincronizarBotonPausa();
@@ -428,6 +531,7 @@ function detenerLecturaPorNuevoDocumento() {
   lecturaPausada = false;
   fragmentosLectura = [];
   fragmentoActualIndex = 0;
+  limpiarCacheAudioIA(); // libera los ObjectURL cacheados del documento anterior
   actualizarSubtitulo("");
   if (progresoLecturaEl) progresoLecturaEl.textContent = "";
   sincronizarBotonPausa();
@@ -517,13 +621,184 @@ function irAFragmento(index) {
   hablarFragmentoActual();
 }
 
+// === Segundo motor: lectura de documento completo con voz IA (opcional) ===
+// A diferencia de la voz del navegador (fragmento por fragmento,
+// secuencial y gratis), acá se arma una cola: se pide el audio del bloque
+// actual y, mientras suena, se empieza a pedir el del siguiente en
+// paralelo — así no hay silencios largos entre bloques. Los audios ya
+// generados quedan en caché (por índice de bloque) mientras dure esta
+// sesión de lectura: volver atrás no vuelve a gastar cuota. Es opt-in
+// (checkbox "Leer el documento completo con voz IA") porque consume
+// cuota de ElevenLabs a diferencia de la lectura con voz del navegador.
+const lecturaDocumentoIAToggle = document.getElementById("lecturaDocumentoIA");
+const vocesIADisponiblesEl = document.getElementById("vocesIADisponibles");
+
+let vozLecturaIA = (localStorage.getItem("medusaLecturaDocumentoIA") ?? "0") === "1";
+if (lecturaDocumentoIAToggle) {
+  lecturaDocumentoIAToggle.checked = vozLecturaIA;
+  lecturaDocumentoIAToggle.addEventListener("change", e => {
+    vozLecturaIA = e.target.checked;
+    localStorage.setItem("medusaLecturaDocumentoIA", vozLecturaIA ? "1" : "0");
+  });
+}
+
+let bloquesIA = [];
+let lecturaIAActiva = false;
+let cacheAudioIA = new Map(); // índice de bloque -> { url }
+let prefetchEnCursoIA = new Map(); // índice de bloque -> Promise
+
+function limpiarCacheAudioIA() {
+  for (const { url } of cacheAudioIA.values()) {
+    try { URL.revokeObjectURL(url); } catch {}
+  }
+  cacheAudioIA.clear();
+  prefetchEnCursoIA.clear();
+  bloquesIA = [];
+  lecturaIAActiva = false;
+}
+
+async function obtenerAudioBloqueIA(indice) {
+  if (cacheAudioIA.has(indice)) return cacheAudioIA.get(indice);
+  if (prefetchEnCursoIA.has(indice)) return prefetchEnCursoIA.get(indice);
+  const promesa = (async () => {
+    const texto = prepararTextoParaTTS(bloquesIA[indice]);
+    const res = await fetch(`${BACKEND_URL}/tts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: texto, tipo: generoParaElevenLabs(), contexto: "documento" })
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw Object.assign(new Error(data.error || "Error al generar audio"), { codigo: data.codigo });
+    }
+    const blob = await res.blob();
+    const entrada = { url: URL.createObjectURL(blob) };
+    cacheAudioIA.set(indice, entrada);
+    return entrada;
+  })();
+  prefetchEnCursoIA.set(indice, promesa);
+  try {
+    return await promesa;
+  } finally {
+    prefetchEnCursoIA.delete(indice);
+  }
+}
+
+async function reproducirBloqueIA(indice) {
+  const miToken = lecturaToken;
+  if (indice >= bloquesIA.length) {
+    lecturaIAActiva = false;
+    lecturaEnCurso = false;
+    marcarEstadoLectura("🟢 Listo (lectura completa).");
+    actualizarSubtitulo("");
+    return;
+  }
+  fragmentoActualIndex = indice; // reutiliza el índice que ya usa la UI de progreso
+  fragmentosLectura = bloquesIA; // para que actualizarProgreso() cuente sobre los bloques de IA
+  actualizarProgreso();
+  actualizarSubtitulo(bloquesIA[indice].slice(0, 300));
+  marcarEstadoLectura("⏳ Preparando audio...");
+
+  let entrada;
+  try {
+    entrada = await obtenerAudioBloqueIA(indice);
+  } catch (err) {
+    if (miToken !== lecturaToken) return;
+    const mensajes = {
+      limite_diario: "❌ Se alcanzó el límite diario de voz IA. Sigo con la voz del dispositivo.",
+      falta_voz_espanol: "⚠️ Falta configurar una voz en español. Sigo con la voz del dispositivo.",
+      sin_api_key: "⚠️ ElevenLabs no está configurado. Sigo con la voz del dispositivo."
+    };
+    marcarEstadoLectura(mensajes[err.codigo] || "❌ La voz IA no está disponible. Sigo con la voz del dispositivo.");
+    // Respaldo automático: el resto del documento se sigue leyendo con la
+    // voz gratuita del navegador, sin cortar la experiencia.
+    lecturaIAActiva = false;
+    prepararLectura(bloquesIA.slice(indice).join(" "));
+    lecturaEnCurso = true;
+    hablarFragmentoActual();
+    return;
+  }
+  if (miToken !== lecturaToken) return;
+
+  // Mientras suena este bloque, se pide el siguiente en paralelo (si
+  // existe), para que ya esté listo cuando termine y no haya silencio.
+  if (indice + 1 < bloquesIA.length) obtenerAudioBloqueIA(indice + 1).catch(() => {});
+
+  const audio = new Audio(entrada.url);
+  audio.dataset.cacheado = "1"; // no revocar su URL al pausar/detener: vive en cacheAudioIA
+  audioIAActivo = audio;
+  marcarEstadoLectura("▶️ Reproduciendo (voz IA)...");
+  audio.addEventListener("ended", () => {
+    if (audioIAActivo === audio) audioIAActivo = null;
+    if (miToken !== lecturaToken || !lecturaIAActiva || lecturaPausada) return;
+    reproducirBloqueIA(indice + 1);
+  });
+  try {
+    await audio.play();
+  } catch {
+    /* el navegador puede bloquear el autoplay sin una interacción reciente */
+  }
+}
+
+function irABloqueIA(indice) {
+  if (indice < 0 || indice >= bloquesIA.length) return;
+  detenerTodoAhora();
+  lecturaIAActiva = true;
+  lecturaEnCurso = true;
+  lecturaPausada = false;
+  sincronizarBotonPausa();
+  reproducirBloqueIA(indice);
+}
+
+// Actualiza el aviso de qué voces IA hay configuradas en el backend
+// (hombre/mujer), sin exponer los voice_id — solo si están disponibles.
+async function actualizarVocesIADisponibles() {
+  if (!vocesIADisponiblesEl || !BACKEND_URL) return;
+  try {
+    const res = await fetch(`${BACKEND_URL}/tts/voices`, { signal: AbortSignal.timeout(6000) });
+    if (!res.ok) { vocesIADisponiblesEl.textContent = ""; return; }
+    const data = await res.json();
+    if (!data.elevenlabsConfigurado) {
+      vocesIADisponiblesEl.textContent = "⚪ ElevenLabs no está configurado en el backend.";
+      return;
+    }
+    const partes = [];
+    partes.push(data.voces?.hombre?.disponible ? "👨 voz masculina lista" : "👨 falta configurar voz masculina");
+    partes.push(data.voces?.mujer?.disponible ? "👩 voz femenina lista" : "👩 falta configurar voz femenina");
+    vocesIADisponiblesEl.textContent = partes.join(" · ");
+  } catch {
+    vocesIADisponiblesEl.textContent = "";
+  }
+}
+document.addEventListener("medusa:backend-verificado", actualizarVocesIADisponibles);
+
 // === Controles de reproducción ===
-playBtn.addEventListener("click", () => {
+// playBtn: si el checkbox "Leer documento completo con voz IA" está
+// activo (y hay voz IA configurada), usa el motor de IA con cola y
+// prefetch; si no, usa la voz gratuita del navegador (comportamiento de
+// siempre, sin cambios).
+playBtn.addEventListener("click", async () => {
   if (!documentoCargado) {
     marcarEstadoLectura("⚠️ Cargá un documento o archivo primero.");
     return;
   }
   detenerTodoAhora();
+
+  const usarIA = vozLecturaIA && vozIA && vozModo !== "robotica";
+  if (usarIA) {
+    const cantidadCaracteres = documentoCargado.length;
+    const confirmado = confirm(
+      `Vas a leer un documento de aproximadamente ${cantidadCaracteres.toLocaleString("es-UY")} caracteres con voz IA (ElevenLabs). Esto consume tu cuota. ¿Continuar?\n\n(Cancelar usa la voz gratuita del dispositivo en su lugar.)`
+    );
+    if (confirmado) {
+      marcarEstadoLectura("⏳ Procesando...");
+      limpiarCacheAudioIA();
+      bloquesIA = dividirTextoParaHabla(documentoCargado, 500);
+      irABloqueIA(0);
+      return;
+    }
+  }
+
   marcarEstadoLectura("⏳ Procesando...");
   prepararLectura(documentoCargado);
   lecturaEnCurso = true;
@@ -534,8 +809,9 @@ playBtn.addEventListener("click", () => {
 if (reiniciarVozBtn) {
   reiniciarVozBtn.addEventListener("click", () => {
     if (!documentoCargado) return;
-    if (!fragmentosLectura.length) prepararLectura(documentoCargado);
     marcarEstadoLectura("↻ Reiniciando desde el principio...");
+    if (lecturaIAActiva) { irABloqueIA(0); return; }
+    if (!fragmentosLectura.length) prepararLectura(documentoCargado);
     irAFragmento(0);
   });
 }
@@ -560,7 +836,18 @@ function sincronizarBotonPausa() {
 // "Detener" siempre esté visible en el panel, sin quedar como el botón
 // "sobrante" que se cortaba en pantallas chicas.
 pausaReanudarBtn.addEventListener("click", () => {
-  if (lecturaPausada) {
+  if (lecturaIAActiva) {
+    // Motor de IA: se pausa/reanuda el elemento <audio> que está sonando.
+    if (lecturaPausada) {
+      audioIAActivo?.play().catch(() => {});
+      lecturaPausada = false;
+      marcarEstadoLectura("⏵ Reanudado (voz IA).");
+    } else if (audioIAActivo && !audioIAActivo.paused) {
+      audioIAActivo.pause();
+      lecturaPausada = true;
+      marcarEstadoLectura("⏸️ Pausado.");
+    }
+  } else if (lecturaPausada) {
     // El Web Speech API no permite "continuar desde donde se pausó" con
     // precisión de palabra: speechSynthesis.resume() retoma la síntesis
     // pendiente, pero si el navegador la había descartado (algunos lo
@@ -577,10 +864,16 @@ pausaReanudarBtn.addEventListener("click", () => {
   sincronizarBotonPausa();
 });
 if (fragmentoSiguienteBtn) {
-  fragmentoSiguienteBtn.addEventListener("click", () => irAFragmento(fragmentoActualIndex + 1));
+  fragmentoSiguienteBtn.addEventListener("click", () => {
+    if (lecturaIAActiva) irABloqueIA(fragmentoActualIndex + 1);
+    else irAFragmento(fragmentoActualIndex + 1);
+  });
 }
 if (fragmentoAnteriorBtn) {
-  fragmentoAnteriorBtn.addEventListener("click", () => irAFragmento(fragmentoActualIndex - 1));
+  fragmentoAnteriorBtn.addEventListener("click", () => {
+    if (lecturaIAActiva) irABloqueIA(fragmentoActualIndex - 1);
+    else irAFragmento(fragmentoActualIndex - 1);
+  });
 }
 
 // Mensaje visible de qué sistema de voz se usó (o se intentó usar), para
@@ -635,19 +928,23 @@ async function speakConIA(text) {
     return false;
   }
   try {
+    const textoLimpio = prepararTextoParaTTS(text);
     const res = await fetch(`${BACKEND_URL}/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, tipo: generoParaElevenLabs() })
+      body: JSON.stringify({ text: textoLimpio, tipo: generoParaElevenLabs(), contexto: "chat" })
     });
     if (!res.ok) {
-      let detalle = "";
-      try { detalle = (await res.json()).error || ""; } catch {}
-      actualizarEstadoVoz(
-        /ELEVENLABS_API_KEY/i.test(detalle)
-          ? "⚠️ ElevenLabs no está configurado"
-          : "❌ La voz IA no está disponible. Voy a continuar con la voz del dispositivo."
-      );
+      let codigo = "";
+      try { codigo = (await res.json()).codigo || ""; } catch {}
+      // El backend distingue con un "codigo" exacto por qué falló, en vez
+      // de tener que adivinar leyendo el texto del mensaje de error.
+      const mensajes = {
+        sin_api_key: "⚠️ ElevenLabs no está configurado",
+        falta_voz_espanol: "⚠️ Falta configurar una voz en español. Usando la voz del dispositivo.",
+        limite_diario: "❌ Se alcanzó el límite diario de voz IA. Usando la voz del dispositivo."
+      };
+      actualizarEstadoVoz(mensajes[codigo] || "❌ La voz IA no está disponible. Voy a continuar con la voz del dispositivo.");
       return false;
     }
     detenerTodoAhora(); // por si quedó algo sonando justo antes de que llegue la respuesta
@@ -674,22 +971,25 @@ async function hablar(text) {
   if (!ok) speakRobotic(text);
 }
 
+// Una única frase de prueba, usada tanto para "Escuchar muestra" (voz del
+// dispositivo, para comparar modos) como para "Probar voz IA" — así se
+// puede comparar de verdad una voz contra otra con el mismo texto.
+const TEXTO_PRUEBA_VOZ = "Buenos días, Rodri. Revisé el documento y preparé los puntos más importantes. Cuando quieras, podemos analizarlos uno por uno.";
+
 // "Escuchar muestra": reproduce la frase de referencia con la
 // configuración del modo seleccionado (voz del navegador, no IA — los
 // modos ajustan pitch/velocidad/volumen, que son parámetros del habla del
 // dispositivo). Cancela cualquier muestra o lectura anterior antes de
 // empezar, para que nunca se superpongan dos muestras.
-const TEXTO_MUESTRA = "Hola, soy MedusaLee. Voy a ayudarte a escuchar, entender y consultar tus documentos.";
 if (escucharMuestraBtn) {
   escucharMuestraBtn.addEventListener("click", () => {
     if (!vozActiva) { marcarEstadoLectura("⚠️ Activá la voz para escuchar una muestra."); return; }
-    speakRobotic(TEXTO_MUESTRA);
+    speakRobotic(TEXTO_PRUEBA_VOZ);
   });
 }
 
 // "Probar voz IA (chat)": reproduce siempre la misma frase de referencia,
 // con la misma prioridad IA → navegador que usa el chat.
-const TEXTO_PRUEBA_VOZ = "Buenos días, Rodri. Todos los sistemas se encuentran operativos. Revisé la información y preparé un resumen claro para que podamos continuar.";
 if (probarVozBtn) {
   probarVozBtn.addEventListener("click", () => hablar(TEXTO_PRUEBA_VOZ));
 }
