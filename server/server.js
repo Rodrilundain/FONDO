@@ -50,7 +50,7 @@ app.post("/ask", async (req, res) => {
   }
 });
 
-app.get("/", (_req, res) => res.send("Medusa Inteligente backend OK"));
+app.get("/", (_req, res) => res.send("MedusaLee backend OK"));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🪼 Backend de Medusa en puerto ${PORT}`));
+app.listen(PORT, () => console.log(`🪼 Backend de MedusaLee en puerto ${PORT}`));
