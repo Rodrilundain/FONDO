@@ -117,11 +117,16 @@ server/src/voice/   Módulo de voz local con Piper (motor gratis, sin
                     cuota, corre en el propio servidor) — ver su README
 server/models/piper/ Dónde poner el modelo de voz de Piper descargado
 render.yaml         Blueprint de despliegue en Render
+worker/             Cloudflare Worker opcional: backend de IA con Gemini
+                    (principal) y OpenRouter (respaldo) — en paralelo al
+                    backend de Render, no lo reemplaza. Ver worker/README.md
 ```
 
 Los módulos JS son scripts clásicos (no ES modules) que comparten el mismo
 scope global del navegador — sin bundler ni framework, a propósito, para
-mantener el proyecto simple.
+mantener el proyecto simple. El Worker de `worker/` es un proyecto Node
+aparte (con su propio `package.json`), pensado para desplegarse en
+Cloudflare, no en Render ni en GitHub Pages.
 
 ## Tecnologías utilizadas
 

@@ -1,0 +1,33 @@
+# Configuracion de despliegue del Worker de Cloudflare para MedusaLee.
+# NO va ninguna clave real aca -- las claves (GEMINI_API_KEY,
+# OPENROUTER_API_KEY) se configuran con `wrangler secret put`, ver el
+# README del Worker.
+
+name = "medusalee-ai-worker"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+
+# Variables NO secretas (configuracion, no credenciales). ALLOWED_ORIGIN
+# es el origen exacto de tu MedusaLee en GitHub Pages -- cambialo por el
+# tuyo antes de desplegar. Podes agregar mas de un origen separados por
+# coma (por ejemplo, para probar tambien desde localhost).
+[vars]
+ALLOWED_ORIGIN = "https://tu-usuario.github.io"
+AI_ENABLED = "true"
+AI_PRIMARY_PROVIDER = "gemini"
+AI_FALLBACK_ENABLED = "true"
+AI_REQUEST_TIMEOUT_MS = "30000"
+AI_MAX_RETRIES = "1"
+AI_MAX_INPUT_CHARACTERS = "50000"
+CHUNK_SIZE = "6000"
+CHUNK_OVERLAP = "400"
+MAX_DOCUMENT_CHARACTERS = "400000"
+# GEMINI_MODEL y OPENROUTER_MODEL tambien pueden ir aca (no son secretos,
+# son solo el nombre del modelo) -- se dejan comentados porque conviene
+# que los confirmes vos mismo contra la documentacion oficial antes de
+# fijarlos. Sin GEMINI_MODEL, se usa el default documentado en
+# src/services/ai/providerConfig.js (marcado ahi como no verificado por mi
+# contra la doc oficial). Sin OPENROUTER_MODEL, el respaldo queda
+# deshabilitado con un aviso claro, a proposito.
+# GEMINI_MODEL = "gemini-2.5-flash-lite"
+# OPENROUTER_MODEL = ""

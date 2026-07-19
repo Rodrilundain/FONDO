@@ -1,0 +1,4 @@
+# Variables secretas para "wrangler dev" local. Copiar a ".dev.vars"
+# (que nunca se commitea) y pegar claves reales solo ahi.
+GEMINI_API_KEY=pega tu clave acá
+OPENROUTER_API_KEY=pega tu clave acá (opcional)
