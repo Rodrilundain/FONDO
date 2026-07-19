@@ -229,6 +229,12 @@
         <option value="hombre">👨 Hombre (latino/uruguayo)</option>
         <option value="mujer">👩 Mujer (latina/uruguaya)</option>
       </select>
+      <div class="status" id="vozUnicaNota" style="display:none">📱 En iPhone, si Hombre y Mujer suenan parecido, es porque Safari solo tiene una voz en español instalada. Sumá otra en Ajustes → Accesibilidad → Contenido hablado → Voces → Español, o ajustá el tono manualmente abajo.</div>
+    </div>
+
+    <div>
+      <label for="vozTono">🎚️ Tono manual: <span id="tonoValor">automático</span></label>
+      <input type="range" id="vozTono" min="0" max="2" step="0.05" value="0">
     </div>
 
     <div>
@@ -296,6 +302,8 @@
     const vozTipoSelect = document.getElementById("vozTipo");
     const vozVelocidadSlider = document.getElementById("vozVelocidad");
     const velocidadValor = document.getElementById("velocidadValor");
+    const vozTonoSlider = document.getElementById("vozTono");
+    const tonoValor = document.getElementById("tonoValor");
     const playBtn = document.getElementById("playBtn");
     const pauseBtn = document.getElementById("pauseBtn");
     const resumeBtn = document.getElementById("resumeBtn");
@@ -335,6 +343,7 @@
     let vozActiva = vozActivaToggle.checked;
     let vozTipo = vozTipoSelect.value; // "robotica" | "hombre" | "mujer"
     let vozVelocidad = parseFloat(vozVelocidadSlider.value);
+    let vozTonoManual = null; // null = usar el automático según vozTipo
 
     vozActivaToggle.addEventListener("change", e => {
       vozActiva = e.target.checked;
@@ -344,6 +353,16 @@
     vozVelocidadSlider.addEventListener("input", e => {
       vozVelocidad = parseFloat(e.target.value);
       velocidadValor.textContent = vozVelocidad.toFixed(1) + "x";
+    });
+    vozTonoSlider.addEventListener("input", e => {
+      const valor = parseFloat(e.target.value);
+      if (valor <= 0) {
+        vozTonoManual = null;
+        tonoValor.textContent = "automático";
+      } else {
+        vozTonoManual = valor;
+        tonoValor.textContent = valor.toFixed(2);
+      }
     });
     detenerVozBtn.addEventListener("click", () => window.speechSynthesis.cancel());
 
@@ -431,13 +450,30 @@
     }
 
     function pitchFor(tipo) {
+      if (vozTonoManual !== null) return vozTonoManual;
       // La mayoría de los navegadores solo traen una voz en español (femenina
       // por defecto) y el pitch de SpeechSynthesis no cambia el timbre, solo
-      // la altura del tono, así que hay que bajarlo bastante para que la
-      // opción "hombre" se note claramente distinta.
-      if (tipo === "hombre") return 0.5;
-      if (tipo === "mujer") return 1.4;
+      // la altura del tono. En Safari/iOS además suele aplicarse muy poco,
+      // así que hay que bajarlo bastante para que "hombre" se note distinto.
+      if (tipo === "hombre") return 0.3;
+      if (tipo === "mujer") return 1.6;
       return 0.15; // robotica: grave y metálico
+    }
+
+    // Si el navegador solo tiene una voz en español, "hombre" y "mujer" usan
+    // la misma voz base (solo cambia el pitch, que algunos navegadores como
+    // Safari aplican muy poco) — avisamos para que el usuario sepa que no es
+    // un bug, sino una limitación de las voces instaladas en el dispositivo.
+    function avisarSiUnaSolaVoz() {
+      const voices = window.speechSynthesis.getVoices();
+      const esVoices = voices.filter(v => /^es/i.test(v.lang));
+      const nota = document.getElementById("vozUnicaNota");
+      if (!nota) return;
+      nota.style.display = esVoices.length > 1 ? "none" : "block";
+    }
+    if ("speechSynthesis" in window) {
+      avisarSiUnaSolaVoz();
+      window.speechSynthesis.onvoiceschanged = avisarSiUnaSolaVoz;
     }
 
     function speakRobotic(text, { interrupt = true } = {}) {
@@ -701,16 +737,25 @@
             question: query
           })
         });
-        const data = await res.json();
-        const reply = data.reply || "⚡ No obtuve respuesta.";
+        let data = null;
+        try { data = await res.json(); } catch (_) { /* respuesta no era JSON */ }
+
+        if (!res.ok) {
+          throw new Error(data?.reply || data?.error || `El backend respondió ${res.status}`);
+        }
+        const reply = data?.reply || "⚡ No obtuve respuesta.";
         messages.lastChild.textContent = reply;
         speakRobotic(reply);
         pulse = 6;
       } catch (err) {
         console.error(err);
-        const errorMsg = "⚠️ Error al conectar con ChatGPT.";
+        // "Failed to fetch" suele ser: la URL del backend está mal, el
+        // servicio no existe, o Render todavía no terminó de despertar
+        // (el plan gratis tarda ~30-60s la primera vez tras estar inactivo).
+        const detalle = err?.message || "error desconocido";
+        const errorMsg = `⚠️ Error al conectar con el backend (${detalle}). Verificá la URL en el menú y esperá unos segundos si Render estaba dormido.`;
         messages.lastChild.textContent = errorMsg;
-        speakRobotic(errorMsg);
+        speakRobotic("Error al conectar con el backend.");
       }
     }
 
