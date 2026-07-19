@@ -15,26 +15,46 @@ que dice — pensada como ayuda para estudiar.
 - Extracción de texto de PDF, DOCX, TXT y Markdown, con validaciones
   claras (formato, tamaño máximo, archivo vacío, PDF sin texto, PDF
   protegido, URL inválida).
-- Lectura del documento completo en voz alta con controles de
-  ▶️ reproducir, ⏸️ pausar, ⏵ reanudar, ↻ reiniciar y 🔇 detener, más una
-  barra de velocidad (0.5x–2x) — usa la voz del navegador (gratis, sin
-  límite de caracteres). La lectura nunca arranca sola: siempre la inicia
-  el usuario.
-- Tres estilos de voz: 🤖 robotrónica (estilo TARS), 👨 hombre (estilo
-  JARVIS) y 👩 mujer, con tono y velocidad ajustables a mano.
+- Lectura del documento completo en voz alta, fragmento por fragmento,
+  con controles de ▶️ reproducir, ⏸️/⏵ pausar-reanudar, ⏮️/⏭️
+  anterior/siguiente fragmento, ↻ reiniciar y 🔇 detener (parada
+  inmediata que siempre funciona, aunque haya algo sonando) — usa la voz
+  del navegador (gratis, sin límite de caracteres). La lectura nunca
+  arranca sola: siempre la inicia el usuario.
+- **Seis modos de voz** pensados por objetivo, no solo por género:
+  🧭 Asistente, 📘 Docente, 🎯 Concentración, ⚡ Resumen rápido,
+  🤖 Robótica y 🎛️ Personalizada (elegís vos la voz del dispositivo, el
+  tono, la velocidad, el volumen y si usar voz IA). Botón "🔈 Escuchar
+  muestra" para probar cada modo antes de elegirlo.
+- **Lectura dinámica**: antes de leer, cada fragmento se analiza (título,
+  definición, lista, pregunta, advertencia, ejemplo) y se ajustan pausas,
+  tono y ritmo acordes — no todo se lee con la misma cadencia. La
+  división en fragmentos evita cortar decimales, fechas, abreviaturas,
+  URLs y emails a la mitad.
+- Progreso de lectura visible ("Fragmento 8 de 24 — 33% completado") y
+  subtítulos en pantalla con el texto que se está diciendo en ese momento.
+- Tras cargar un documento, un panel pregunta "¿Qué querés lograr con
+  este documento?" (entenderlo, estudiar, presentar, resumen, escucharlo
+  completo, o buscar algo puntual) y ajusta el modo de voz y el estilo de
+  las respuestas del chat en consecuencia — se puede cambiar cuando
+  quieras, y no analiza a la persona ni garantiza resultados, solo adapta
+  el estilo de comunicación.
 - Chat para hacer preguntas sobre el documento cargado (requiere el
   backend, ver abajo): preguntas sugeridas con un toque, copiar
   respuestas, limpiar la conversación, envío con Enter (Shift+Enter para
-  salto de línea), y bloqueo de doble envío.
+  salto de línea), bloqueo de doble envío, y un estilo de redacción
+  cercano y orientado a la acción (sin fingir capacidades que no tiene:
+  no lee la mente ni detecta emociones).
 - Las respuestas del chat pueden leerse con una **voz de IA real**
   (ElevenLabs) en vez de la del navegador — opcional, con respaldo
-  automático a la voz del navegador si falla o no está configurada.
+  automático y aviso ("La voz IA no está disponible, sigo con la voz del
+  dispositivo") si falla, no está configurada, o se agota la cuota.
 - Selección de fragmentos relevantes para documentos largos (RAG simple,
-  sin base vectorial), con referencias visibles de qué fragmentos se
-  usaron para cada respuesta.
-- Preferencias (voz, velocidad, tono, color, animación) se guardan en el
-  navegador entre visitas, con opción de restaurarlas a los valores por
-  defecto.
+  sin base vectorial), con normalización de tildes/plurales y
+  referencias visibles de qué fragmentos se usaron para cada respuesta.
+- Preferencias (modo de voz, voz elegida, tono, velocidad, volumen,
+  objetivo, color, animación) se guardan en el navegador entre visitas,
+  con botones para restaurar todo o solo la configuración de voz.
 
 ## Arquitectura
 
@@ -71,6 +91,21 @@ mantener el proyecto simple.
 - [Groq](https://groq.com/) (Llama 3.3 70B) para responder preguntas —
   gratis, sin tarjeta de crédito.
 - [ElevenLabs](https://elevenlabs.io/) (opcional) para la voz de IA.
+
+## Modos de voz
+
+Valores iniciales de cada modo (`pitch`/`velocidad`/`volumen` del Web
+Speech API; la velocidad se multiplica además por el slider manual
+"Velocidad", y el tono se puede overridear con el slider "Tono manual"):
+
+| Modo | Pitch | Velocidad | Volumen |
+|---|---|---|---|
+| 🧭 Asistente | 0.92 | 0.95 | 1 |
+| 📘 Docente | 1 | 0.88 | 1 |
+| 🎯 Concentración | 0.98 | 0.92 | 0.95 |
+| ⚡ Resumen rápido | 1 | 1.10 | 1 |
+| 🤖 Robótica | 0.75 | 0.88 | 1 |
+| 🎛️ Personalizada | a elección | a elección | a elección |
 
 ## Formatos compatibles
 
@@ -191,6 +226,22 @@ repositorio, apuntando a "GitHub Actions" como origen.
 - **Sin CDN con integridad verificada**: pdf.js y mammoth.js se cargan
   desde CDNs públicos (cdnjs, unpkg) sin hash de integridad (SRI) fijado,
   para no atarse a una versión exacta del build de cada CDN.
+- **Catálogo de voces variable por dispositivo**: no todos los
+  navegadores/sistemas ofrecen las mismas voces en español, y algunos
+  (notablemente Safari/iOS) aplican `pitch` de forma limitada. Los modos
+  ajustan pitch/velocidad/volumen, pero no pueden garantizar que sonarán
+  igual en todos los dispositivos — eso depende de las voces que tenga
+  instaladas cada uno.
+- **Sin voces instaladas**: si el dispositivo no tiene ningún motor de
+  síntesis de voz disponible (poco común, pero pasa por ejemplo en
+  algunos entornos de servidor/CI sin voces del sistema), la lectura
+  muestra un estado de error claro en vez de quedarse "reproduciendo"
+  sin sonar nada.
+- **Reanudar/Siguiente/Anterior fragmento** dependen de que el navegador
+  pueda cancelar y arrancar síntesis de voz rápido; en la práctica esto
+  funciona bien, pero no hay garantía de continuidad perfecta si el
+  dispositivo está muy exigido en ese momento (limitación del Web Speech
+  API, no de MedusaLee).
 
 ## Privacidad
 
@@ -205,11 +256,16 @@ persisten preferencias no sensibles (ver más abajo).
 
 ### Qué se guarda en el navegador (`localStorage`)
 
-Tipo de voz, velocidad, tono manual, color, animación activada/desactivada,
-uso de voz IA, y la URL del backend configurada. Nada de esto son datos
-sensibles. **Nunca** se guardan documentos, conversaciones ni claves API
-en el navegador. Podés borrar todo esto desde el menú (☰ → ↺ Restaurar
-configuración).
+Modo de voz, voz elegida en "Personalizada", tono manual, velocidad,
+volumen (Personalizada), uso de voz IA, objetivo elegido para el
+documento, color, animación activada/desactivada, y la URL del backend
+configurada. Nada de esto son datos sensibles. **Nunca** se guardan
+documentos, conversaciones ni claves API en el navegador. Podés borrar
+todo esto desde el menú (☰ → ↺ Restaurar configuración), o solo lo
+relacionado a la voz (☰ → ↺ Restaurar configuración de voz). La posición
+de lectura (fragmento actual) se recuerda solo mientras la pestaña sigue
+abierta — no se guarda en localStorage porque no tendría sentido sin el
+documento, que tampoco se guarda.
 
 ## Pruebas realizadas
 
@@ -241,20 +297,39 @@ pendiente). Esta ronda se probó manualmente así:
 | Arrastrar y soltar archivo | Playwright, evento `drop` simulado | Carga el archivo correctamente |
 | Persistencia de preferencias | Playwright, cambiar valores + recargar página | Se mantienen tras recargar |
 | Restaurar configuración | Playwright, botón + recarga | Vuelve a los valores por defecto |
-| Responsive (390×844, 430×932, 768×1024, 1366×768, 1920×1080) | Playwright, capturas de pantalla | Sin scroll horizontal; se corrigió una superposición real entre el chat y el panel principal |
+| Responsive (390×844, 430×932, 768×1024, 1280×720, 1366×768, 1920×1080) | Playwright, capturas de pantalla | Sin scroll horizontal; se corrigieron dos superposiciones reales entre el chat y el panel principal (una por el panel de objetivo, otra por un bug de `[hidden]` — ver abajo) |
 | Cabeceras de seguridad y CORS del backend | `curl` contra un servidor Express real corrido localmente | Cabeceras presentes incluso en respuestas 403; origen no permitido sigue rechazado |
 | Navegación por teclado | Revisión de código (botones reales, `tabindex`, manejo de Enter/Espacio/Escape) | Revisado por código, no probado con lector de pantalla real |
+| Cada modo de voz (valores pitch/velocidad/volumen) | Playwright, lectura directa de `MODOS_VOZ` en el navegador | Coinciden exactamente con los valores pedidos |
+| Cambio de modo durante una lectura | Playwright | El modo nuevo se aplica desde el próximo fragmento hablado |
+| Botón "Escuchar muestra" sin superponer audio | Playwright, dos clics seguidos, se verificó que cada clic invalida la reproducción anterior (token de lectura) | Sin superposición |
+| Pausar/Reanudar (botón único) | Playwright | Alterna correctamente el texto/estado del botón |
+| Detener inmediato | Playwright | Siempre visible y funcional, incluso durante una lectura activa |
+| División de texto: no corta decimales/fechas/abreviaturas/URLs/emails | Playwright, texto de prueba con los 5 casos y `maxLen` chico a propósito para forzar el corte | Ningún fragmento corta un patrón protegido a la mitad (se encontraron y corrigieron 2 bugs reales: fechas mal protegidas por el patrón de decimales, y una colisión de nombres entre `chat.js` y `voz.js` que hacía que se usara la versión sin protección) |
+| Clasificación de fragmentos (título/lista/pregunta/advertencia/definición/ejemplo) | Playwright, `analizarFragmento()` con un texto de cada tipo | Correcto tras corregir un bug real (una advertencia con dos puntos se clasificaba como definición) |
+| Documento corto / largo, con y sin RAG | Playwright | Igual que antes, sin regresiones |
+| Pregunta cuya respuesta existe / no existe | Revisión del prompt del backend (pide decir "No encontré esa información..." en vez de inventar) | Revisado por código |
+| Voz IA disponible / caída | Playwright + mock de `/tts` devolviendo error | Cae a la voz del navegador y avisa "La voz IA no está disponible..." |
+| Una sola voz disponible en el dispositivo / varias voces en español | Este entorno de pruebas no tiene NINGUNA voz de síntesis instalada (`speechSynthesis.getVoices()` devuelve 0) | **No se pudo probar el caso de 1 vs. varias voces reales** — sí se verificó que la lógica de prioridad regional (es-UY>es-AR>es-419>otras es>default) funciona sobre una lista simulada, y que un error real de síntesis ahora se muestra como error en vez de quedar colgado "Reproduciendo..." (bug real encontrado y corregido) |
+| Safari de iPhone / Chrome Android | No disponibles en este entorno de desarrollo | **No probado en dispositivos reales** |
+| Doble clic en reproducir | Playwright | El guard de `detenerTodoAhora()` cancela lo anterior antes de reproducir de nuevo |
+| Cambio de documento con lectura activa | Playwright, revisión de código (`detenerLecturaPorNuevoDocumento`) | Se cancela la lectura y se resetea el progreso al cargar un documento nuevo |
+| Bug real: `[hidden]` no ocultaba `#playbackControls`, `#heroLinkRow` ni `#suggestedQuestions` | Playwright, capturas de la pantalla inicial | Confirmado y corregido (regla CSS defensiva `[hidden] { display: none !important; }`) — estos elementos se veían en pantalla desde el principio, antes de cargar cualquier documento |
 
 No se fabricó ningún resultado: donde no se pudo ejecutar la prueba real
-(PDF/DOCX por bloqueo de red del entorno de desarrollo; lector de
-pantalla real; Safari/iPhone real), queda aclarado arriba en vez de darlo
-por probado.
+(PDF/DOCX y voces de síntesis por bloqueo/limitaciones del entorno de
+desarrollo; lector de pantalla real; Safari/iPhone real), queda aclarado
+arriba en vez de darlo por probado.
 
 ## Próximas mejoras
 
 - Tests automatizados (hoy la matriz de arriba es manual).
-- Verificar en un iPhone/Safari real.
+- Verificar en un iPhone/Safari y en Android reales.
 - Reemplazar los proxies públicos de lectura de URLs genéricas por un
   endpoint propio en el backend, para no depender de servicios de
   terceros sin SLA.
 - Progressive Web App (ícono, instalable, funcionamiento básico offline).
+- El panel "¿Qué querés lograr?" puede quedar unos pocos píxeles superpuesto
+  con el borde del chat en laptops de poca altura (~720px) mientras está
+  abierto — es temporal (se oculta al elegir una opción) y no afecta los
+  controles de reproducción una vez elegida, pero se puede pulir más.
