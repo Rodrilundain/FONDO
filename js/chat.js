@@ -245,11 +245,11 @@ let chatEnviando = false; // evita mandar la misma pregunta varias veces (doble 
 
 async function medusaRespond(query) {
   if (!documentoCargado) {
-    addMessage("⚠️ Cargá primero un documento.", "bot");
+    addMessage("Para responder, antes necesito que cargues un documento.", "bot");
     return;
   }
   if (!BACKEND_URL) {
-    addMessage("⚠️ Configurá la URL del backend en el menú (☰ → Backend de preguntas) para poder responder.", "bot");
+    addMessage("Todavía no configuraste el backend de preguntas. Podés hacerlo en el menú (☰ → Backend de preguntas).", "bot");
     return;
   }
   chatEnviando = true;
@@ -261,7 +261,7 @@ async function medusaRespond(query) {
     const res = await fetchConReintento(`${BACKEND_URL}/ask`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ context: contexto, question: query })
+      body: JSON.stringify({ context: contexto, question: query, objetivo: typeof objetivoActual !== "undefined" ? objetivoActual : null })
     }, texto => { msgBot.querySelector(".msg-texto").textContent = texto; });
 
     let data = null;
@@ -280,7 +280,7 @@ async function medusaRespond(query) {
     // servicio no existe, o Render todavía no terminó de despertar
     // (el plan gratis tarda ~30-60s la primera vez tras estar inactivo).
     const detalle = err?.message || "error desconocido";
-    const errorMsg = `⚠️ Error al conectar con el backend (${detalle}). Verificá la URL en el menú y esperá unos segundos si Render estaba dormido.`;
+    const errorMsg = `No pude conectar con el servidor de preguntas (${detalle}). Revisá la URL en el menú, o esperá unos segundos si estaba dormido, e intentá de nuevo.`;
     actualizarMensajeBot(msgBot, errorMsg, null);
     speakRobotic("Error al conectar con el backend.");
   } finally {

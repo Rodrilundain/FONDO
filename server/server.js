@@ -59,8 +59,21 @@ function esTextoValido(valor, maxLen) {
   return typeof valor === "string" && valor.trim().length > 0 && valor.length <= maxLen;
 }
 
+// Objetivo elegido por el usuario tras cargar el documento (opcional):
+// solo cambia el ESTILO de la respuesta, nunca su contenido. Se valida
+// contra una lista fija en vez de aceptar texto libre, para que no sea
+// una puerta de entrada a instrucciones arbitrarias en el prompt.
+const OBJETIVOS_VALIDOS = {
+  entender: "quiere entender el documento desde cero",
+  estudiar: "está estudiando este documento para una evaluación",
+  presentacion: "está preparando una presentación con este documento",
+  resumen: "quiere un resumen, sin entrar en todos los detalles",
+  completo: "quiere escuchar/leer el documento completo con calma",
+  puntual: "busca un dato puntual, no una explicación larga"
+};
+
 app.post("/ask", async (req, res) => {
-  const { context, question } = req.body || {};
+  const { context, question, objetivo } = req.body || {};
 
   if (!esTextoValido(question, MAX_QUESTION_LEN)) {
     return res.status(400).json({
@@ -73,6 +86,7 @@ app.post("/ask", async (req, res) => {
     return res.status(400).json({ reply: "Falta el documento." });
   }
   const contextoRecortado = context.slice(0, MAX_CONTEXT_LEN);
+  const objetivoTexto = typeof objetivo === "string" ? OBJETIVOS_VALIDOS[objetivo] : null;
 
   try {
     const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -94,10 +108,21 @@ app.post("/ask", async (req, res) => {
               "únicamente en los fragmentos del documento provistos como contexto (cada uno " +
               "puede venir marcado como [Fragmento N]). Si usás información de un fragmento " +
               "marcado, podés citar su número entre paréntesis. Si la respuesta no está en " +
-              "los fragmentos provistos, decilo claramente en vez de inventarla — no asumas " +
-              "que el documento entero no la tiene, aclará que no aparece en las partes que " +
-              "se te pasaron. Sé breve y claro, como si le explicaras a alguien que está " +
-              "estudiando para un examen."
+              "los fragmentos provistos, decilo claramente (por ejemplo: \"No encontré esa " +
+              "información en el documento cargado\") en vez de inventarla — no asumas que el " +
+              "documento entero no la tiene, aclará que no aparece en las partes que se te " +
+              "pasaron. Sé breve y claro, como si le explicaras a alguien que está estudiando " +
+              "para un examen." +
+              (objetivoTexto ? ` El usuario ${objetivoTexto}: adaptá la extensión y el estilo de tu respuesta a eso.` : "") +
+              "\n\nEstilo de comunicación: usá un tono cercano, positivo y orientado a la " +
+              "acción. Explicá en pasos chicos cuando ayude, dá ejemplos concretos, y si algo " +
+              "puede resultar confuso, ofrecé reformularlo en vez de repetirlo igual. Si la " +
+              "pregunta del usuario muestra un error de comprensión, no lo señales como un " +
+              "fallo — guialo con calma hacia la respuesta correcta (por ejemplo: \"Estás " +
+              "cerca, repasemos este punto\" en vez de \"Eso está mal\"). Esto es solo un " +
+              "estilo de redacción: no afirmes que podés leer la mente, detectar emociones, " +
+              "diagnosticar nada, ni determinar si alguien es una persona visual, auditiva o " +
+              "kinestésica — no es algo que puedas saber ni algo que esta app mida."
           },
           {
             role: "user",
