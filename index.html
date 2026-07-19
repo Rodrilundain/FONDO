@@ -477,10 +477,23 @@
     }
 
     function rateMultiplierFor(tipo) {
-      // TARS habla pausado y monótono; JARVIS suena ágil y articulado.
+      // TARS habla pausado y monótono; JARVIS habla a ~92% del ritmo
+      // normal: tranquilo pero ágil, nunca apurado.
       if (tipo === "robotica") return 0.9;
-      if (tipo === "hombre") return 1.05;
+      if (tipo === "hombre") return 0.92;
       return 1;
+    }
+
+    // Estilo "asistente" (voz hombre/JARVIS): ante una advertencia baja el
+    // tono, reduce el ritmo y agrega una pausa breve antes del mensaje, para
+    // sonar firme; ante un logro se mantiene igual, sin sonar exagerado.
+    const TEXTO_ADVERTENCIA = /\b(advertencia|atenci[oó]n|cuidado|alerta|error|problema|falla|inconsistencia|riesgo)\b/i;
+
+    function ajustarPorContexto(chunk, pitch, rate, tipo) {
+      if (tipo !== "hombre" || !TEXTO_ADVERTENCIA.test(chunk)) {
+        return { texto: chunk, pitch, rate };
+      }
+      return { texto: `... ${chunk}`, pitch: pitch * 0.9, rate: rate * 0.85 };
     }
 
     // Si el navegador solo tiene una voz en español, "hombre" y "mujer" usan
@@ -507,10 +520,11 @@
       const rate = vozVelocidad * rateMultiplierFor(vozTipo);
       const chunks = chunkText(text);
       for (const chunk of chunks) {
-        const utterance = new SpeechSynthesisUtterance(chunk);
+        const ajuste = ajustarPorContexto(chunk, pitch, rate, vozTipo);
+        const utterance = new SpeechSynthesisUtterance(ajuste.texto);
         utterance.lang = (voice && voice.lang) || "es-UY";
-        utterance.pitch = pitch;
-        utterance.rate = rate;
+        utterance.pitch = ajuste.pitch;
+        utterance.rate = ajuste.rate;
         utterance.volume = 1;
         if (voice) utterance.voice = voice;
         window.speechSynthesis.speak(utterance);
