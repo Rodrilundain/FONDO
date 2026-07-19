@@ -7,5 +7,9 @@ services:
     buildCommand: npm install
     startCommand: npm start
     envVars:
+      # GROQ_API_KEY: no se pega acá en el archivo. Con "sync: false", Render
+      # muestra un campo de texto vacío para esta variable durante el deploy
+      # (en la página del botón "Deploy to Render") — es ahí, en esa página
+      # web de Render, donde pegás tu clave real.
       - key: GROQ_API_KEY
         sync: false
