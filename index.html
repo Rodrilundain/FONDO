@@ -16,8 +16,71 @@
     canvas {
       position: fixed; top: 0; left: 0;
       width: 100vw; height: 100vh;
-      display: block; cursor: none;
+      display: block;
     }
+    button:focus-visible, a:focus-visible, input:focus-visible,
+    select:focus-visible, summary:focus-visible {
+      outline: 2px solid #7dcaff;
+      outline-offset: 2px;
+    }
+
+    /* Pantalla inicial */
+    .hero-panel {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 92%; max-width: 420px;
+      text-align: center;
+      z-index: 5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+    .hero-text {
+      font-size: 1.05em;
+      line-height: 1.5;
+      color: #cde9ff;
+      text-shadow: 0 2px 14px rgba(0,0,0,0.85);
+    }
+    .hero-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .hero-btn {
+      padding: 14px 22px;
+      min-height: 44px;
+      border-radius: 12px;
+      border: 1px solid rgba(125,202,255,0.4);
+      background: rgba(125,202,255,0.14);
+      color: #eaf6ff;
+      font-size: 1em;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      backdrop-filter: blur(6px);
+    }
+    .hero-btn:hover { background: rgba(125,202,255,0.26); }
+    .hero-link-row {
+      display: flex;
+      gap: 8px;
+      width: 100%;
+    }
+    .hero-link-row input {
+      flex: 1;
+      min-height: 44px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: none;
+      background: rgba(10,23,36,0.92);
+      color: #eaf6ff;
+      font-size: 0.95em;
+      font-family: inherit;
+    }
+    .hero-panel .status { text-shadow: 0 2px 10px rgba(0,0,0,0.85); }
+    .hero-panel .btn-row { width: 100%; }
 
     /* Menú hamburguesa */
     .menu-btn {
@@ -28,6 +91,9 @@
       cursor: pointer;
       display: flex; flex-direction: column;
       justify-content: space-between;
+      background: none;
+      border: none;
+      padding: 0;
     }
     .menu-btn div {
       height: 4px;
@@ -199,18 +265,38 @@
     .chat #sendBtn:hover {
       background: #9cdcff;
     }
+    .menu details {
+      border-top: 1px solid rgba(255,255,255,0.12);
+      padding-top: 10px;
+      margin-top: 4px;
+    }
+    .menu summary {
+      cursor: pointer;
+      font-size: 0.9em;
+      color: #9cdcff;
+      margin-bottom: 8px;
+    }
+    .menu details > div { margin-top: 10px; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .menu-btn div { transition: none; }
+    }
   </style>
 </head>
 <body>
 
   <canvas id="canvas"></canvas>
 
-  <!-- Menú hamburguesa -->
-  <div class="menu-btn" id="menuBtn">
+  <!-- Menú hamburguesa (configuración secundaria) -->
+  <button type="button" class="menu-btn" id="menuBtn" aria-label="Abrir configuración" aria-expanded="false" aria-controls="menu">
     <div></div><div></div><div></div>
-  </div>
+  </button>
 
   <div class="menu" id="menu">
+    <div>
+      <label><input type="checkbox" id="animActiva" checked> 🌀 Animación de fondo</label>
+    </div>
+
     <div>
       <label for="color">🎨 Color manual</label>
       <input type="color" id="color" value="#7dcaff">
@@ -249,29 +335,37 @@
       <div class="status">Requiere el backend con ELEVENLABS_API_KEY configurada. La lectura del documento completo sigue usando la voz del navegador (gratis, sin límite de caracteres).</div>
     </div>
 
-    <div class="url-box">
-      <label for="docUrl">🗂️ URL documento</label>
-      <input type="text" id="docUrl" placeholder="https://ejemplo.com/documento">
+    <details>
+      <summary>⚙️ Configuración avanzada</summary>
+      <div class="url-box">
+        <label for="backendUrlInput">🔌 Backend de preguntas (URL de Render, NO un documento)</label>
+        <input type="text" id="backendUrlInput" placeholder="https://tu-backend.onrender.com">
+        <div class="status" id="backendStatus"></div>
+      </div>
+    </details>
+  </div>
+
+  <!-- Panel principal: cargar documento y controlar la lectura -->
+  <div class="hero-panel" id="heroPanel">
+    <p class="hero-text">Cargá un documento y <strong>MedusaLee</strong> te lo lee, analiza su contenido y responde tus preguntas.</p>
+
+    <div class="hero-actions">
+      <button type="button" id="heroUploadBtn" class="hero-btn" aria-label="Subir archivo desde tu dispositivo">📁 Subir archivo</button>
+      <button type="button" id="heroLinkBtn" class="hero-btn" aria-label="Pegar el enlace de un documento" aria-expanded="false" aria-controls="heroLinkRow">🔗 Pegar enlace</button>
     </div>
 
-    <div class="url-box">
-      <label for="docFile">📁 Subir archivo (.txt, .md, .pdf, .docx)</label>
-      <input type="file" id="docFile" accept=".txt,.md,.pdf,.docx">
+    <div class="hero-link-row" id="heroLinkRow" hidden>
+      <input type="text" id="docUrl" placeholder="https://ejemplo.com/documento.pdf" aria-label="URL del documento a cargar">
     </div>
+    <input type="file" id="docFile" accept=".txt,.md,.pdf,.docx" hidden aria-label="Seleccionar archivo del documento">
 
-    <div class="status" id="status">Sin documento cargado</div>
+    <div class="status" id="status" role="status" aria-live="polite">Sin documento cargado</div>
 
-    <div class="btn-row">
-      <button id="playBtn" class="btn-stop">▶️ Reproducir</button>
-      <button id="pauseBtn" class="btn-stop">⏸️ Pausar</button>
-      <button id="resumeBtn" class="btn-stop">⏵ Reanudar</button>
-      <button id="detenerVoz" class="btn-stop">🔇 Detener</button>
-    </div>
-
-    <div class="url-box">
-      <label for="backendUrlInput">🔌 Backend de preguntas (URL de Render, NO un documento)</label>
-      <input type="text" id="backendUrlInput" placeholder="https://tu-backend.onrender.com">
-      <div class="status" id="backendStatus"></div>
+    <div class="btn-row" id="playbackControls" hidden>
+      <button type="button" id="playBtn" class="btn-stop" aria-label="Reproducir lectura del documento">▶️ Reproducir</button>
+      <button type="button" id="pauseBtn" class="btn-stop" aria-label="Pausar lectura">⏸️ Pausar</button>
+      <button type="button" id="resumeBtn" class="btn-stop" aria-label="Reanudar lectura">⏵ Reanudar</button>
+      <button type="button" id="detenerVoz" class="btn-stop" aria-label="Detener lectura">🔇 Detener</button>
     </div>
   </div>
 
@@ -318,18 +412,46 @@
     const detenerVozBtn = document.getElementById("detenerVoz");
     const backendUrlInput = document.getElementById("backendUrlInput");
     const backendStatus = document.getElementById("backendStatus");
+    const heroUploadBtn = document.getElementById("heroUploadBtn");
+    const heroLinkBtn = document.getElementById("heroLinkBtn");
+    const heroLinkRow = document.getElementById("heroLinkRow");
+    const playbackControls = document.getElementById("playbackControls");
+    const animActivaToggle = document.getElementById("animActiva");
 
+    function toggleMenu(forceOpen) {
+      const abrir = forceOpen !== undefined ? forceOpen : !menu.classList.contains("open");
+      menu.classList.toggle("open", abrir);
+      menuBtn.setAttribute("aria-expanded", String(abrir));
+    }
     menuBtn.addEventListener("click", e => {
       e.stopPropagation();
-      menu.classList.toggle("open");
+      toggleMenu();
     });
     // Cerrar el menú al tocar afuera, para que no quede tapando el chat.
     document.addEventListener("click", e => {
       if (menu.classList.contains("open") && !menu.contains(e.target) && e.target !== menuBtn) {
-        menu.classList.remove("open");
+        toggleMenu(false);
       }
     });
     menu.addEventListener("click", e => e.stopPropagation());
+    // Cerrar menú y colapsar "pegar enlace" con Escape.
+    document.addEventListener("keydown", e => {
+      if (e.key !== "Escape") return;
+      if (menu.classList.contains("open")) toggleMenu(false);
+      if (!heroLinkRow.hidden) {
+        heroLinkRow.hidden = true;
+        heroLinkBtn.setAttribute("aria-expanded", "false");
+      }
+    });
+
+    // === Panel principal: subir archivo / pegar enlace ===
+    heroUploadBtn.addEventListener("click", () => docFileInput.click());
+    heroLinkBtn.addEventListener("click", () => {
+      const mostrar = heroLinkRow.hidden;
+      heroLinkRow.hidden = !mostrar;
+      heroLinkBtn.setAttribute("aria-expanded", String(mostrar));
+      if (mostrar) docUrlInput.focus();
+    });
 
     // === Color control ===
     let mainColor = colorPicker.value;
@@ -404,7 +526,12 @@
       }
     });
 
-    // === Backend de preguntas (configurable, se guarda en el navegador) ===
+    // === Backend de preguntas ===
+    // URL por defecto: si desplegás tu propio backend con otro nombre en
+    // Render, cambiala acá. El usuario puede pisarla sin tocar código desde
+    // "⚙️ Configuración avanzada" en el menú (queda guardada en el navegador).
+    const DEFAULT_BACKEND_URL = "https://medusa-backend-n56j.onrender.com";
+
     // Error común: pegar acá el link del documento en vez de la URL del
     // servidor de Render. Avisamos si el link tiene pinta de documento.
     function checkBackendUrl(url) {
@@ -415,7 +542,7 @@
         : "";
     }
 
-    let BACKEND_URL = localStorage.getItem("medusaBackendUrl") || "";
+    let BACKEND_URL = localStorage.getItem("medusaBackendUrl") || DEFAULT_BACKEND_URL;
     backendUrlInput.value = BACKEND_URL;
     checkBackendUrl(BACKEND_URL);
     backendUrlInput.addEventListener("change", () => {
@@ -729,10 +856,10 @@
       try {
         documentoCargado = (await fetchDocumentText(url)).replace(/\s+/g, " ").trim();
         if (!documentoCargado) throw new Error("El documento está vacío.");
-        status.textContent = "✅ Documento cargado correctamente.";
+        status.textContent = "✅ Documento cargado correctamente. Presioná Reproducir para comenzar la lectura.";
         chat.style.display = "flex";
-        menu.classList.remove("open");
-        speakRobotic(`Documento cargado correctamente. Iniciando lectura. ${documentoCargado}`);
+        playbackControls.hidden = false;
+        toggleMenu(false);
       } catch (err) {
         console.error(err);
         documentoCargado = "";
@@ -753,10 +880,10 @@
           .replace(/\s+/g, " ").trim();
         if (!documentoCargado) throw new Error("El archivo está vacío.");
 
-        status.textContent = `✅ "${file.name}" cargado correctamente.`;
+        status.textContent = `✅ "${file.name}" cargado correctamente. Presioná Reproducir para comenzar la lectura.`;
         chat.style.display = "flex";
-        menu.classList.remove("open");
-        speakRobotic(`Archivo cargado correctamente. Iniciando lectura. ${documentoCargado}`);
+        playbackControls.hidden = false;
+        toggleMenu(false);
       } catch (err) {
         console.error(err);
         documentoCargado = "";
@@ -770,8 +897,9 @@
       const params = new URLSearchParams(window.location.search);
       const sharedUrl = params.get("doc") || params.get("url");
       if (sharedUrl) {
+        heroLinkRow.hidden = false;
+        heroLinkBtn.setAttribute("aria-expanded", "true");
         docUrlInput.value = sharedUrl;
-        menu.classList.add("open");
         loadDocumentFromUrl(sharedUrl);
       }
     })();
@@ -780,7 +908,7 @@
     function sendQuestion() {
       const query = question.value.trim();
       if (!query) return;
-      menu.classList.remove("open");
+      toggleMenu(false);
       addMessage(query, "user");
       question.value = "";
       medusaRespond(query);
@@ -915,10 +1043,29 @@
       }
     }
 
-    const tentacles = Array.from({ length: 65 }, (_, i) => new Tentacle(core, (i / 65) * Math.PI * 2));
+    // Menos tentáculos en pantallas chicas: menos CPU/batería en celulares.
+    const totalTentaculos = window.innerWidth < 640 ? 28 : 65;
+    const tentacles = Array.from({ length: totalTentaculos }, (_, i) => new Tentacle(core, (i / totalTentaculos) * Math.PI * 2));
     let pulse = 0;
 
+    // === Control de la animación: pausa en pestaña oculta, respeta
+    // prefers-reduced-motion, y se puede desactivar a mano desde el menú.
+    const prefiereMenosMovimiento = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let animActiva = animActivaToggle.checked && !prefiereMenosMovimiento;
+    let pestañaVisible = !document.hidden;
+    if (prefiereMenosMovimiento) animActivaToggle.checked = false;
+
+    animActivaToggle.addEventListener("change", e => {
+      animActiva = e.target.checked;
+      if (animActiva && pestañaVisible) requestAnimationFrame(animate);
+    });
+    document.addEventListener("visibilitychange", () => {
+      pestañaVisible = !document.hidden;
+      if (pestañaVisible && animActiva) requestAnimationFrame(animate);
+    });
+
     function animate(t) {
+      if (!animActiva || !pestañaVisible) return; // no seguir pidiendo frames de más
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       if (autoMode) {
@@ -966,7 +1113,7 @@
       requestAnimationFrame(animate);
     }
 
-    requestAnimationFrame(animate);
+    if (animActiva) requestAnimationFrame(animate);
   </script>
 </body>
 </html>
