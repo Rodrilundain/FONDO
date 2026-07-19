@@ -13,14 +13,14 @@ app.post("/ask", async (req, res) => {
     return res.status(400).json({ reply: "Falta el documento o la pregunta." });
   }
   try {
-    const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+    const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+        Authorization: `Bearer ${process.env.GROQ_API_KEY}`
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: "llama-3.3-70b-versatile",
         messages: [
           {
             role: "system",
@@ -38,12 +38,12 @@ app.post("/ask", async (req, res) => {
         temperature: 0.3
       })
     });
-    const data = await openaiRes.json();
-    const reply = data.choices?.[0]?.message?.content || "No pude generar una respuesta.";
+    const data = await groqRes.json();
+    const reply = data.choices?.[0]?.message?.content || data.error?.message || "No pude generar una respuesta.";
     res.json({ reply });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ reply: "Error interno al conectar con OpenAI." });
+    res.status(500).json({ reply: "Error interno al conectar con Groq." });
   }
 });
 
