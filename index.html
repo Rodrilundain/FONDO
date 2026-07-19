@@ -225,8 +225,8 @@
     <div>
       <label for="vozTipo">🗣️ Tipo de voz</label>
       <select id="vozTipo">
-        <option value="robotica">🤖 Robotrónica</option>
-        <option value="hombre">👨 Hombre (latino/uruguayo)</option>
+        <option value="robotica">🤖 Robotrónica (estilo TARS)</option>
+        <option value="hombre">👨 Hombre (estilo JARVIS)</option>
         <option value="mujer">👩 Mujer (latina/uruguaya)</option>
       </select>
       <div class="status" id="vozUnicaNota" style="display:none">📱 En iPhone, si Hombre y Mujer suenan parecido, es porque Safari solo tiene una voz en español instalada. Sumá otra en Ajustes → Accesibilidad → Contenido hablado → Voces → Español, o ajustá el tono manualmente abajo.</div>
@@ -451,12 +451,24 @@
 
     function pitchFor(tipo) {
       if (vozTonoManual !== null) return vozTonoManual;
-      // pitch va de 0 a 2 en la Web Speech API. Usamos los extremos del
-      // rango para que la diferencia sea audible incluso en navegadores
-      // (Safari/iOS) que aplican el pitch de forma muy sutil.
-      if (tipo === "hombre") return 0.1;
-      if (tipo === "mujer") return 2;
-      return 0.15; // robotica: grave y metálico
+      // Cada tipo tiene su propia identidad, bien separada entre sí para
+      // que no se confundan:
+      // - "robotica" (estilo TARS): grave pero NO extremo, monótona.
+      // - "hombre" (estilo JARVIS): tono masculino natural, sin sonar
+      //   robótico ni extremadamente grave — a propósito bien distinto de
+      //   "robotica" para que no suenen parecidas.
+      // - "mujer": tono femenino natural.
+      if (tipo === "robotica") return 0.55;
+      if (tipo === "hombre") return 0.85;
+      if (tipo === "mujer") return 1.3;
+      return 1;
+    }
+
+    function rateMultiplierFor(tipo) {
+      // TARS habla pausado y monótono; JARVIS suena ágil y articulado.
+      if (tipo === "robotica") return 0.9;
+      if (tipo === "hombre") return 1.05;
+      return 1;
     }
 
     // Si el navegador solo tiene una voz en español, "hombre" y "mujer" usan
@@ -480,12 +492,13 @@
       if (interrupt) window.speechSynthesis.cancel();
       const voice = pickVoice(vozTipo);
       const pitch = pitchFor(vozTipo);
+      const rate = vozVelocidad * rateMultiplierFor(vozTipo);
       const chunks = chunkText(text);
       for (const chunk of chunks) {
         const utterance = new SpeechSynthesisUtterance(chunk);
         utterance.lang = (voice && voice.lang) || "es-UY";
         utterance.pitch = pitch;
-        utterance.rate = vozVelocidad;
+        utterance.rate = rate;
         utterance.volume = 1;
         if (voice) utterance.voice = voice;
         window.speechSynthesis.speak(utterance);
