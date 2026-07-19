@@ -17,6 +17,9 @@ app.post("/ask", async (req, res) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        // (la clave NO se pega acá en el código; se lee de la variable de
+        // entorno GROQ_API_KEY, que en Render se configura en el formulario
+        // web del deploy, y en local en server/.env)
         Authorization: `Bearer ${process.env.GROQ_API_KEY}`
       },
       body: JSON.stringify({
