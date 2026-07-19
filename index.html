@@ -451,12 +451,11 @@
 
     function pitchFor(tipo) {
       if (vozTonoManual !== null) return vozTonoManual;
-      // La mayoría de los navegadores solo traen una voz en español (femenina
-      // por defecto) y el pitch de SpeechSynthesis no cambia el timbre, solo
-      // la altura del tono. En Safari/iOS además suele aplicarse muy poco,
-      // así que hay que bajarlo bastante para que "hombre" se note distinto.
-      if (tipo === "hombre") return 0.3;
-      if (tipo === "mujer") return 1.6;
+      // pitch va de 0 a 2 en la Web Speech API. Usamos los extremos del
+      // rango para que la diferencia sea audible incluso en navegadores
+      // (Safari/iOS) que aplican el pitch de forma muy sutil.
+      if (tipo === "hombre") return 0.1;
+      if (tipo === "mujer") return 2;
       return 0.15; // robotica: grave y metálico
     }
 
