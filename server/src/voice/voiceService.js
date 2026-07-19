@@ -1,0 +1,93 @@
+// === VoiceService: interfaz única de texto-a-voz para MedusaLee ===
+// Hoy solo Piper está implementado de verdad. La idea de tener un mapa de
+// proveedores (en vez de llamar a Piper directo) es poder sumar otros
+// motores (OpenVoice, MeloTTS) más adelante sin cambiar la firma de
+// `textToSpeech`, que es lo que el resto de MedusaLee (o un script de
+// prueba) termina usando.
+//
+//   VoiceService
+//    |- PiperProvider     (implementado)
+//    |- OpenVoiceProvider (placeholder, sin dependencias instaladas)
+//    `- MeloTTSProvider   (placeholder, sin dependencias instaladas)
+
+import { cargarVoiceConfig } from "./voiceConfig.js";
+import { validarTexto, limpiarTextoParaSintesis, dividirEnBloques } from "./textSanitizer.js";
+import { sintetizarConPiper, limpiarArchivosViejos, reproducirAudioLocal } from "./providers/piperProvider.js";
+import { crearProviderNoImplementado } from "./providers/providerStub.js";
+
+const PROVIDERS = {
+  piper: { synthesize: (texto, config) => sintetizarConPiper(texto, config.piper) },
+  openvoice: crearProviderNoImplementado("OpenVoice"),
+  melotts: crearProviderNoImplementado("MeloTTS"),
+};
+
+function respuestaError(engine, mensaje) {
+  return { success: false, audioPath: null, engine, error: mensaje };
+}
+
+function respuestaOk(engine, audioPath) {
+  return { success: true, audioPath, engine, error: null };
+}
+
+// Función reutilizable principal. Nunca lanza una excepción hacia quien la
+// llama: cualquier fallo (Piper no instalado, modelo faltante, texto
+// vacío, motor desactivado) se traduce a `{ success: false, error }`, para
+// que un problema del sistema de voz jamás le impida a MedusaLee entregar
+// su respuesta en texto.
+//
+//   const audioResult = await textToSpeech({ text: respuesta, voice: "es_AR", autoplay: true });
+export async function textToSpeech({ text, voice, autoplay } = {}) {
+  const config = cargarVoiceConfig();
+  const engine = config.ttsEngine;
+
+  if (!config.ttsEnabled) {
+    return respuestaError(engine, "La síntesis de voz está desactivada (TTS_ENABLED=false).");
+  }
+  if (!validarTexto(text)) {
+    return respuestaError(engine, "El texto está vacío.");
+  }
+
+  const provider = PROVIDERS[engine];
+  if (!provider) {
+    return respuestaError(engine, `Motor de voz "${engine}" no reconocido. Motores disponibles: ${Object.keys(PROVIDERS).join(", ")}.`);
+  }
+
+  // Piper ya administra pausas entre oraciones internamente, así que hoy
+  // se sintetiza el texto completo en un solo pedido; dividirlo en bloques
+  // deja el terreno preparado por si en el futuro conviene generar/
+  // reproducir por partes (documentos largos, streaming).
+  const textoLimpio = limpiarTextoParaSintesis(text);
+  const textoFinal = dividirEnBloques(textoLimpio, config.maxCaracteresPorBloque).join(" ");
+
+  // Limpieza de archivos viejos en segundo plano: no bloquea ni puede
+  // hacer fallar esta solicitud si algo sale mal borrando.
+  limpiarArchivosViejos(config.piper.outputDirectory, config.tempMaxAgeMinutos).catch(() => {});
+
+  let audioPath;
+  try {
+    audioPath = await provider.synthesize(textoFinal, { ...config, voice });
+  } catch (err) {
+    return respuestaError(engine, err?.message || "Error desconocido al generar la voz.");
+  }
+
+  const debeReproducir = autoplay !== undefined ? autoplay : config.autoplay;
+  if (debeReproducir) {
+    // Best effort: si no hay parlantes o reproductor (por ejemplo, en un
+    // servidor desplegado sin audio), no afecta el resultado ya generado.
+    reproducirAudioLocal(audioPath).catch(() => {});
+  }
+
+  return respuestaOk(engine, audioPath);
+}
+
+// Para que server.js pueda decidir si muestra la opción de voz local sin
+// tener que leer variables de entorno por su cuenta.
+export function vozLocalHabilitada() {
+  return cargarVoiceConfig().ttsEnabled;
+}
+
+// Para que server.js pueda servir el .wav generado sin duplicar la lógica
+// de dónde vive la carpeta de audio (mismo criterio que usa Piper).
+export function rutaDirectorioAudioPiper() {
+  return cargarVoiceConfig().piper.outputDirectory;
+}
