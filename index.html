@@ -82,6 +82,22 @@
       width: 100%;
       accent-color: #7dcaff;
     }
+    .menu input[type="file"] {
+      width: 100%;
+      font-size: 0.75em;
+      color: #9cdcff;
+    }
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .btn-row .btn-stop {
+      flex: 1 1 auto;
+      margin-top: 0;
+      white-space: nowrap;
+    }
     .url-box {
       display: flex;
       flex-direction: column;
@@ -201,8 +217,25 @@
     <div class="url-box">
       <label for="docUrl">🗂️ URL documento</label>
       <input type="text" id="docUrl" placeholder="https://ejemplo.com/documento">
-      <div class="status" id="status">Sin documento cargado</div>
-      <button id="detenerVoz" class="btn-stop">🔇 Detener voz</button>
+    </div>
+
+    <div class="url-box">
+      <label for="docFile">📁 Subir archivo (.txt, .md, .pdf)</label>
+      <input type="file" id="docFile" accept=".txt,.md,.pdf">
+    </div>
+
+    <div class="status" id="status">Sin documento cargado</div>
+
+    <div class="btn-row">
+      <button id="playBtn" class="btn-stop">▶️ Reproducir</button>
+      <button id="pauseBtn" class="btn-stop">⏸️ Pausar</button>
+      <button id="resumeBtn" class="btn-stop">⏵ Reanudar</button>
+      <button id="detenerVoz" class="btn-stop">🔇 Detener</button>
+    </div>
+
+    <div class="url-box">
+      <label for="backendUrlInput">🔌 Backend de preguntas</label>
+      <input type="text" id="backendUrlInput" placeholder="https://tu-backend.onrender.com">
     </div>
   </div>
 
@@ -212,8 +245,12 @@
     <input type="text" id="question" placeholder="Escribí tu pregunta y presioná Enter...">
   </div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script>
-    const BACKEND_URL = "https://TU_DOMINIO/ask"; // 🔧 Cambiá esto por tu endpoint real
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    }
 
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d", { alpha: true });
@@ -222,6 +259,7 @@
     const menu = document.getElementById("menu");
     const menuBtn = document.getElementById("menuBtn");
     const docUrlInput = document.getElementById("docUrl");
+    const docFileInput = document.getElementById("docFile");
     const status = document.getElementById("status");
     const chat = document.getElementById("chat");
     const messages = document.getElementById("messages");
@@ -230,7 +268,11 @@
     const vozTipoSelect = document.getElementById("vozTipo");
     const vozVelocidadSlider = document.getElementById("vozVelocidad");
     const velocidadValor = document.getElementById("velocidadValor");
+    const playBtn = document.getElementById("playBtn");
+    const pauseBtn = document.getElementById("pauseBtn");
+    const resumeBtn = document.getElementById("resumeBtn");
     const detenerVozBtn = document.getElementById("detenerVoz");
+    const backendUrlInput = document.getElementById("backendUrlInput");
 
     menuBtn.addEventListener("click", () => menu.classList.toggle("open"));
 
@@ -275,6 +317,32 @@
       velocidadValor.textContent = vozVelocidad.toFixed(1) + "x";
     });
     detenerVozBtn.addEventListener("click", () => window.speechSynthesis.cancel());
+
+    playBtn.addEventListener("click", () => {
+      if (!documentoCargado) {
+        status.textContent = "⚠️ Cargá un documento o archivo primero.";
+        return;
+      }
+      speakRobotic(documentoCargado);
+    });
+    pauseBtn.addEventListener("click", () => {
+      if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+        window.speechSynthesis.pause();
+      }
+    });
+    resumeBtn.addEventListener("click", () => {
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+    });
+
+    // === Backend de preguntas (configurable, se guarda en el navegador) ===
+    let BACKEND_URL = localStorage.getItem("medusaBackendUrl") || "";
+    backendUrlInput.value = BACKEND_URL;
+    backendUrlInput.addEventListener("change", () => {
+      BACKEND_URL = backendUrlInput.value.trim().replace(/\/+$/, "");
+      localStorage.setItem("medusaBackendUrl", BACKEND_URL);
+    });
 
     function chunkText(text, maxLen = 220) {
       const sentences = text.match(/[^.!?]+[.!?]*/g) || [text];
@@ -402,6 +470,43 @@
 
     docUrlInput.addEventListener("change", () => loadDocumentFromUrl(docUrlInput.value));
 
+    async function extractPdfText(arrayBuffer) {
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let text = "";
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        text += content.items.map(item => item.str).join(" ") + "\n";
+      }
+      return text;
+    }
+
+    docFileInput.addEventListener("change", async () => {
+      const file = docFileInput.files[0];
+      if (!file) return;
+      status.textContent = "Leyendo archivo...";
+      try {
+        let text;
+        if (/\.pdf$/i.test(file.name) || file.type === "application/pdf") {
+          if (!window.pdfjsLib) throw new Error("No se pudo cargar el lector de PDF.");
+          text = await extractPdfText(await file.arrayBuffer());
+        } else {
+          text = await file.text();
+        }
+        documentoCargado = text.replace(/\s+/g, " ").trim();
+        if (!documentoCargado) throw new Error("El archivo está vacío.");
+
+        status.textContent = `✅ "${file.name}" cargado correctamente.`;
+        chat.style.display = "flex";
+        speakRobotic(`Archivo cargado correctamente. Iniciando lectura. ${documentoCargado}`);
+      } catch (err) {
+        console.error(err);
+        documentoCargado = "";
+        status.textContent = "⚠️ Error al leer el archivo.";
+        speakRobotic("Error al leer el archivo.");
+      }
+    });
+
     // Carga automática cuando el documento llega compartido por URL (?doc= o ?url=)
     (function autoLoadSharedDoc() {
       const params = new URLSearchParams(window.location.search);
@@ -436,9 +541,13 @@
         addMessage("⚠️ Cargá primero un documento.", "bot");
         return;
       }
+      if (!BACKEND_URL) {
+        addMessage("⚠️ Configurá la URL del backend en el menú (☰ → Backend de preguntas) para poder responder.", "bot");
+        return;
+      }
       addMessage("💭 Pensando...", "bot");
       try {
-        const res = await fetch(BACKEND_URL, {
+        const res = await fetch(`${BACKEND_URL}/ask`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

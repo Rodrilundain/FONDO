@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: medusa-backend
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
