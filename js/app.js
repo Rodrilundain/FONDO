@@ -5,6 +5,7 @@
 
 const menu = document.getElementById("menu");
 const menuBtn = document.getElementById("menuBtn");
+const menuBackdrop = document.getElementById("menuBackdrop");
 const backendUrlInput = document.getElementById("backendUrlInput");
 const backendStatus = document.getElementById("backendStatus");
 const backendConnStatus = document.getElementById("backendConnStatus");
@@ -17,6 +18,7 @@ const chatEl = document.getElementById("chat");
 function toggleMenu(forceOpen) {
   const abrir = forceOpen !== undefined ? forceOpen : !menu.classList.contains("open");
   menu.classList.toggle("open", abrir);
+  if (menuBackdrop) menuBackdrop.classList.toggle("open", abrir);
   menuBtn.setAttribute("aria-expanded", String(abrir));
 }
 menuBtn.addEventListener("click", e => {
