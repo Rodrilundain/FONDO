@@ -1,0 +1,459 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: radial-gradient(circle at center, #030712 0%, #000 90%);
+  font-family: "Inter", sans-serif;
+  color: #7dcaff;
+}
+canvas {
+  position: fixed; top: 0; left: 0;
+  width: 100vw; height: 100vh;
+  display: block;
+}
+button:focus-visible, a:focus-visible, input:focus-visible,
+select:focus-visible, summary:focus-visible, textarea:focus-visible {
+  outline: 2px solid #7dcaff;
+  outline-offset: 2px;
+}
+button { min-height: 44px; min-width: 44px; }
+
+/* Pantalla inicial */
+.hero-panel {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 92%; max-width: 460px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  text-align: center;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 6px;
+}
+.hero-title {
+  font-size: 1.6em;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #eaf6ff;
+  text-shadow: 0 2px 18px rgba(125,202,255,0.5);
+}
+.hero-subtitle {
+  font-size: 1em;
+  color: #9cdcff;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.85);
+}
+.hero-text {
+  font-size: 0.92em;
+  line-height: 1.5;
+  color: #cde9ff;
+  text-shadow: 0 2px 14px rgba(0,0,0,0.85);
+}
+.hero-formats {
+  font-size: 0.78em;
+  color: #9cdcff;
+  opacity: 0.9;
+}
+
+/* Una vez que hay un documento cargado, la zona grande de arrastrar y el
+   texto de bienvenida ya no aportan nada y le sacan lugar al chat en
+   pantallas bajas (portrait de celular, laptops de poca altura) — se
+   ocultan y solo queda la acción de cargar otro documento. */
+.hero-panel.documento-cargado .dropzone,
+.hero-panel.documento-cargado .hero-subtitle,
+.hero-panel.documento-cargado .hero-text {
+  display: none;
+}
+
+/* Zona de arrastrar y soltar */
+.dropzone {
+  width: 100%;
+  border: 2px dashed rgba(125,202,255,0.45);
+  border-radius: 16px;
+  padding: 22px 14px;
+  background: rgba(125,202,255,0.06);
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.dropzone:hover, .dropzone:focus-visible {
+  background: rgba(125,202,255,0.12);
+}
+.dropzone.dragover {
+  background: rgba(125,202,255,0.22);
+  border-color: #7dcaff;
+}
+.dropzone-icon { font-size: 2em; }
+.dropzone-text { font-size: 0.95em; color: #eaf6ff; font-weight: 600; }
+.dropzone-hint { font-size: 0.78em; color: #9cdcff; opacity: 0.85; }
+
+.hero-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.hero-btn {
+  padding: 14px 22px;
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(125,202,255,0.4);
+  background: rgba(125,202,255,0.14);
+  color: #eaf6ff;
+  font-size: 1em;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+.hero-btn:hover { background: rgba(125,202,255,0.26); }
+.hero-link-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.hero-link-row input {
+  flex: 1;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: none;
+  background: rgba(10,23,36,0.92);
+  color: #eaf6ff;
+  font-size: 0.95em;
+  font-family: inherit;
+}
+.hero-panel .status { text-shadow: 0 2px 10px rgba(0,0,0,0.85); }
+.hero-panel .btn-row { width: 100%; }
+
+.spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid rgba(125,202,255,0.35);
+  border-top-color: #7dcaff;
+  border-radius: 50%;
+  animation: girar 0.8s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; }
+}
+@keyframes girar { to { transform: rotate(360deg); } }
+
+/* Menú hamburguesa */
+.menu-btn {
+  position: absolute;
+  top: 15px; right: 20px;
+  z-index: 10;
+  width: 32px; height: 24px;
+  cursor: pointer;
+  display: flex; flex-direction: column;
+  justify-content: space-between;
+  background: none;
+  border: none;
+  padding: 0;
+}
+.menu-btn div {
+  height: 4px;
+  background: #7dcaff;
+  border-radius: 2px;
+  transition: 0.3s;
+}
+.menu {
+  position: absolute;
+  top: 55px; right: 15px;
+  width: 270px;
+  max-height: calc(100vh - 75px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: rgba(0,0,0,0.85);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.6);
+  padding: 16px;
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 15;
+  backdrop-filter: blur(8px);
+}
+.menu.open { display: flex; }
+.menu label {
+  font-size: 0.9em;
+  color: #9cdcff;
+  margin-bottom: 2px;
+}
+.menu input[type="color"] {
+  width: 100%;
+  height: 30px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+.menu input[type="checkbox"] {
+  transform: scale(1.2);
+  margin-right: 6px;
+}
+.menu select {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: none;
+  background: #0a1724;
+  color: #7dcaff;
+  font-size: 0.85em;
+  outline: none;
+}
+.menu input[type="range"] {
+  width: 100%;
+  accent-color: #7dcaff;
+}
+.menu input[type="file"] {
+  width: 100%;
+  font-size: 0.75em;
+  color: #9cdcff;
+}
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.btn-row .btn-stop {
+  flex: 1 1 auto;
+  margin-top: 0;
+  white-space: nowrap;
+}
+.url-box {
+  display: flex;
+  flex-direction: column;
+}
+.url-box input {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: none;
+  background: #0a1724;
+  color: #7dcaff;
+  font-size: 0.8em;
+  outline: none;
+}
+.status {
+  font-size: 0.8em;
+  margin-top: 4px;
+  color: #cfe9ff;
+  opacity: 0.95;
+}
+.btn-stop {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(125,202,255,0.1);
+  color: #7dcaff;
+  font-size: 0.8em;
+  cursor: pointer;
+}
+.btn-stop:hover {
+  background: rgba(125,202,255,0.2);
+}
+.btn-stop:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.menu-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid rgba(255,255,255,0.12);
+  padding-top: 10px;
+  margin-top: 4px;
+}
+.link-btn {
+  background: none;
+  border: none;
+  color: #9cdcff;
+  text-decoration: underline;
+  font-size: 0.78em;
+  cursor: pointer;
+  padding: 6px 2px;
+}
+.privacy-note {
+  font-size: 0.72em;
+  line-height: 1.4;
+  color: #9cdcff;
+  opacity: 0.85;
+  border-top: 1px solid rgba(255,255,255,0.12);
+  padding-top: 10px;
+  margin-top: 4px;
+}
+
+/* Chat */
+.chat {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 90%;
+  max-width: 480px;
+  max-height: min(64vh, 560px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: rgba(0,0,0,0.6);
+  border-top-left-radius: 14px;
+  border-top-right-radius: 14px;
+  box-shadow: 0 -2px 18px rgba(0,0,0,0.6);
+  display: none;
+  flex-direction: column;
+  padding: 12px;
+  color: #cde9ff;
+  z-index: 20;
+  backdrop-filter: blur(10px);
+  transition: bottom 0.15s ease-out;
+}
+.chat-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+.chat-header button {
+  background: none;
+  border: none;
+  color: #9cdcff;
+  font-size: 0.75em;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 4px 6px;
+}
+/* Fila única con scroll horizontal: si las 6 preguntas sugeridas se
+   apilaran en varias filas, el chat crecía tanto que tapaba los controles
+   de reproducción y el panel principal (confirmado con capturas en varios
+   tamaños de pantalla). */
+.suggested-questions {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding-bottom: 2px;
+}
+.suggested-questions button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: 0.75em;
+  padding: 6px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(125,202,255,0.35);
+  background: rgba(125,202,255,0.08);
+  color: #cde9ff;
+  cursor: pointer;
+  font-family: inherit;
+}
+.suggested-questions button:hover { background: rgba(125,202,255,0.18); }
+.messages {
+  flex: 1;
+  max-height: 40vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  font-size: 0.9em;
+  margin-bottom: 8px;
+}
+.msg {
+  margin: 4px 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  line-height: 1.3;
+  position: relative;
+}
+.msg.user { background: rgba(125,202,255,0.15); text-align: right; }
+.msg.bot { background: rgba(125,202,255,0.05); text-align: left; }
+.msg.bot.pensando { opacity: 0.75; font-style: italic; }
+.msg-texto { white-space: pre-wrap; }
+.msg-fragmentos {
+  font-size: 0.72em;
+  opacity: 0.7;
+  margin-top: 4px;
+}
+.msg-copiar {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 0.72em;
+  background: none;
+  border: none;
+  color: #9cdcff;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 2px 4px;
+  min-height: auto;
+}
+.question-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+.chat textarea {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+  width: 100%;
+  outline: none;
+  font-family: inherit;
+  font-size: 0.95em;
+  resize: none;
+  max-height: 90px;
+  line-height: 1.3;
+}
+.chat #sendBtn {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: #7dcaff;
+  color: #041018;
+  font-size: 1.1em;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat #sendBtn:hover {
+  background: #9cdcff;
+}
+.chat #sendBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.menu details {
+  border-top: 1px solid rgba(255,255,255,0.12);
+  padding-top: 10px;
+  margin-top: 4px;
+}
+.menu summary {
+  cursor: pointer;
+  font-size: 0.9em;
+  color: #9cdcff;
+  margin-bottom: 8px;
+}
+.menu details > div { margin-top: 10px; }
+
+@media (max-width: 420px) {
+  .hero-title { font-size: 1.35em; }
+  .chat { width: 96%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu-btn div { transition: none; }
+  .chat { transition: none; }
+}
