@@ -242,18 +242,21 @@ function urlEsValida(url) {
   }
 }
 
-// Traduce errores técnicos a mensajes simples, sin tecnicismos crudos.
+// Traduce errores técnicos a mensajes simples y tranquilos, sin
+// tecnicismos crudos: se explica qué pasó y qué puede hacer el usuario,
+// sin dramatizar (estilo de comunicación cercano, no un mensaje de
+// fallo seco).
 function mensajeAmigablePara(err, contexto) {
   const msg = err?.message || "";
-  if (/tamaño máximo/i.test(msg)) return msg;
-  if (/contraseña/i.test(msg)) return "⚠️ Este documento está protegido con contraseña y no se puede leer.";
-  if (/dañado|no se pudo leer/i.test(msg)) return "⚠️ El archivo parece estar corrupto o dañado.";
-  if (/no parece apuntar/i.test(msg)) return "⚠️ El enlace no parece apuntar a un documento compatible.";
-  if (contexto === "pdf-vacio") return "⚠️ No pudimos encontrar texto dentro de este PDF (puede ser una imagen escaneada sin texto reconocible).";
-  if (contexto === "vacio") return "⚠️ El archivo está vacío.";
+  if (/tamaño máximo/i.test(msg)) return `⚠️ ${msg} Probá con una versión más liviana del archivo.`;
+  if (/contraseña/i.test(msg)) return "⚠️ Este documento tiene contraseña y no puedo abrirlo. Probá exportarlo sin protección e intentá de nuevo.";
+  if (/dañado|no se pudo leer/i.test(msg)) return "⚠️ Este archivo parece estar dañado. Probá abrirlo y volver a guardarlo, o usar otra copia.";
+  if (/no parece apuntar/i.test(msg)) return "⚠️ El enlace no parece apuntar a un documento compatible. Revisá que sea un PDF, Word, TXT o Markdown válido.";
+  if (contexto === "pdf-vacio") return "⚠️ No pude encontrar texto dentro de este PDF — puede ser una imagen escaneada. Probá con un PDF que tenga texto seleccionable.";
+  if (contexto === "vacio") return "⚠️ Este archivo parece estar vacío. Revisá que tenga contenido e intentá de nuevo.";
   return contexto === "url"
-    ? "⚠️ No pudimos cargar ese enlace. Verificá que sea público y apunte a un documento compatible."
-    : "⚠️ No pudimos leer ese archivo. Verificá que no esté dañado o protegido.";
+    ? "⚠️ No pude cargar ese enlace. Revisá que sea público y apunte a un documento compatible, e intentá de nuevo."
+    : "⚠️ No pude procesar el archivo. Revisá que sea un PDF, Word, TXT o Markdown válido.";
 }
 
 function marcarListoParaLeer(nombreOEtiqueta) {
@@ -270,11 +273,12 @@ async function loadDocumentFromUrl(url) {
   if (!url) return;
   if (cargaEnCurso) { status.textContent = "⏳ Ya hay una carga en curso, esperá a que termine."; return; }
   if (!urlEsValida(url)) {
-    status.textContent = "⚠️ Esa URL no parece válida (tiene que empezar con http:// o https://).";
+    status.textContent = "⚠️ Ese enlace no parece válido. Revisá que empiece con http:// o https:// e intentá de nuevo.";
     return;
   }
   cargaEnCurso = true;
   fijarBotonesDeCarga(true);
+  detenerLecturaPorNuevoDocumento();
   status.innerHTML = '<span class="spinner" aria-hidden="true"></span>Cargando documento...';
   try {
     const texto = (await fetchDocumentText(url)).replace(/\s+/g, " ").trim();
@@ -300,7 +304,7 @@ async function procesarArchivo(file) {
 
   const nombreValido = EXTENSIONES_PERMITIDAS.some(ext => file.name.toLowerCase().endsWith(ext));
   if (!nombreValido) {
-    status.textContent = `⚠️ Formato no admitido. Usá alguno de estos: ${EXTENSIONES_PERMITIDAS.join(", ")}.`;
+    status.textContent = `⚠️ Ese formato todavía no está soportado. Probá con ${EXTENSIONES_PERMITIDAS.join(", ")}.`;
     return;
   }
   if (file.size === 0) {
@@ -308,12 +312,13 @@ async function procesarArchivo(file) {
     return;
   }
   if (file.size > MAX_FILE_SIZE_BYTES) {
-    status.textContent = `⚠️ Este archivo supera el tamaño máximo permitido (${MAX_FILE_SIZE_MB} MB).`;
+    status.textContent = `⚠️ Este archivo supera el tamaño máximo permitido (${MAX_FILE_SIZE_MB} MB). Probá con una versión más liviana.`;
     return;
   }
 
   cargaEnCurso = true;
   fijarBotonesDeCarga(true);
+  detenerLecturaPorNuevoDocumento();
   status.innerHTML = '<span class="spinner" aria-hidden="true"></span>Extrayendo texto...';
   try {
     const tipo = detectFileTypeByExtension(file.name) || "text";

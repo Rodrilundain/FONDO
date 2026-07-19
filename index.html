@@ -36,13 +36,29 @@
     </div>
 
     <div>
-      <label for="vozTipo">🗣️ Tipo de voz</label>
-      <select id="vozTipo">
-        <option value="robotica">🤖 Robotrónica (estilo TARS)</option>
-        <option value="hombre">👨 Hombre (estilo JARVIS)</option>
-        <option value="mujer">👩 Mujer (latina/uruguaya)</option>
+      <label for="vozModo">🎯 Modo de voz</label>
+      <select id="vozModo">
+        <option value="asistente">🧭 Asistente</option>
+        <option value="docente">📘 Docente</option>
+        <option value="concentracion">🎯 Concentración</option>
+        <option value="resumen">⚡ Resumen rápido</option>
+        <option value="robotica">🤖 Robótica</option>
+        <option value="personalizada">🎛️ Personalizada</option>
       </select>
-      <div class="status" id="vozUnicaNota" style="display:none">📱 En iPhone, si Hombre y Mujer suenan parecido, es porque Safari solo tiene una voz en español instalada. Sumá otra en Ajustes → Accesibilidad → Contenido hablado → Voces → Español, o ajustá el tono manualmente abajo. (No es que la voz sea uruguaya de verdad: es la variante más parecida que ofrece tu navegador.)</div>
+      <div class="status" id="vozModoDesc"></div>
+      <div class="status" id="vozUnicaNota" style="display:none">Tu dispositivo solo tiene una voz en español disponible. Los modos pueden sonar parecidos aunque cambies el tono.</div>
+      <div class="btn-row">
+        <button type="button" id="escucharMuestraBtn" class="btn-stop">🔈 Escuchar muestra</button>
+        <button type="button" id="cambiarObjetivoBtn" class="btn-stop">🎯 Cambiar objetivo</button>
+      </div>
+    </div>
+
+    <div id="personalizadaPanel" hidden>
+      <label for="vozPersonalizadaSelect">🗣️ Voz disponible</label>
+      <select id="vozPersonalizadaSelect"></select>
+      <label for="vozVolumenPersonalizada">🔉 Volumen: <span id="volumenPersonalizadaValor">1.0</span></label>
+      <input type="range" id="vozVolumenPersonalizada" min="0.3" max="1" step="0.05" value="1">
+      <div class="status">La velocidad y el tono se ajustan con los controles de abajo; la voz IA y la voz del navegador se eligen en la sección "Voz IA" más abajo.</div>
     </div>
 
     <div>
@@ -57,9 +73,9 @@
 
     <div>
       <label><input type="checkbox" id="vozIA" checked> 🧠 Voz IA (ElevenLabs) en las respuestas del chat</label>
-      <div class="status">Opcional: requiere el backend con ELEVENLABS_API_KEY configurada. Si falla o no está disponible, se usa automáticamente la voz del navegador. La lectura del documento completo siempre usa la voz del navegador (gratis, sin límite de caracteres).</div>
+      <div class="status">Opcional: requiere el backend con ELEVENLABS_API_KEY configurada. Si falla o no está disponible, se avisa y se usa automáticamente la voz del navegador. La lectura del documento completo siempre usa la voz del navegador (gratis, sin límite de caracteres).</div>
       <div class="btn-row">
-        <button type="button" id="probarVozBtn" class="btn-stop">🔊 Probar voz</button>
+        <button type="button" id="probarVozBtn" class="btn-stop">🔊 Probar voz IA (chat)</button>
         <button type="button" id="leerFragmentoBtn" class="btn-stop">✂️ Leer fragmento con voz IA</button>
       </div>
       <div class="status" id="vozEstado" role="status" aria-live="polite"></div>
@@ -77,6 +93,7 @@
 
     <div class="menu-footer">
       <button type="button" class="link-btn" id="restaurarConfigBtn">↺ Restaurar configuración</button>
+      <button type="button" class="link-btn" id="restaurarVozBtn">↺ Restaurar configuración de voz</button>
     </div>
 
     <div class="privacy-note">
@@ -111,14 +128,24 @@
     <input type="file" id="docFile" accept=".txt,.md,.pdf,.docx" hidden aria-label="Seleccionar archivo del documento">
 
     <div class="status" id="status" role="status" aria-live="polite">Sin documento cargado</div>
+
+    <div class="objetivo-panel" id="objetivoPanel" hidden>
+      <div class="objetivo-pregunta">¿Qué querés lograr con este documento?</div>
+      <div class="objetivo-opciones" id="objetivoOpciones"></div>
+      <div class="objetivo-nota">Esto solo adapta el modo de voz y el estilo de las respuestas — no analiza tu personalidad ni garantiza resultados. Podés cambiarlo cuando quieras desde el menú.</div>
+    </div>
+
     <div class="status" id="estadoLectura" role="status" aria-live="polite"></div>
+    <div class="status" id="progresoLectura" role="status" aria-live="polite"></div>
+    <div class="subtitulos" id="subtitulosVoz" role="status" aria-live="polite" hidden></div>
 
     <div class="btn-row" id="playbackControls" hidden>
+      <button type="button" id="detenerVoz" class="btn-stop btn-detener" aria-label="Detener lectura inmediatamente">🔇 Detener</button>
       <button type="button" id="playBtn" class="btn-stop" aria-label="Reproducir lectura del documento">▶️ Reproducir</button>
-      <button type="button" id="pauseBtn" class="btn-stop" aria-label="Pausar lectura">⏸️ Pausar</button>
-      <button type="button" id="resumeBtn" class="btn-stop" aria-label="Reanudar lectura">⏵ Reanudar</button>
+      <button type="button" id="pausaReanudarBtn" class="btn-stop" aria-label="Pausar lectura" aria-pressed="false">⏸️ Pausar</button>
+      <button type="button" id="fragmentoAnteriorBtn" class="btn-stop" aria-label="Ir al fragmento anterior">⏮️ Anterior</button>
+      <button type="button" id="fragmentoSiguienteBtn" class="btn-stop" aria-label="Ir al fragmento siguiente">⏭️ Siguiente</button>
       <button type="button" id="reiniciarVoz" class="btn-stop" aria-label="Reiniciar lectura desde el principio">↻ Reiniciar</button>
-      <button type="button" id="detenerVoz" class="btn-stop" aria-label="Detener lectura">🔇 Detener</button>
     </div>
   </div>
 

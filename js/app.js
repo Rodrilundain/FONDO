@@ -11,6 +11,7 @@ const backendConnStatus = document.getElementById("backendConnStatus");
 const heroLinkRowEl = document.getElementById("heroLinkRow");
 const heroLinkBtnEl = document.getElementById("heroLinkBtn");
 const restaurarConfigBtn = document.getElementById("restaurarConfigBtn");
+const restaurarVozBtn = document.getElementById("restaurarVozBtn");
 const chatEl = document.getElementById("chat");
 
 function toggleMenu(forceOpen) {
@@ -102,16 +103,27 @@ if (window.visualViewport && chatEl) {
 
 // === Restaurar configuración predeterminada ===
 // Borra solo las preferencias no sensibles guardadas por MedusaLee (nunca
-// documentos ni conversaciones, que no se guardan en localStorage) y
-// recarga la página con los valores de fábrica.
+// documentos, conversaciones ni claves API, que no se guardan en
+// localStorage) y recarga la página con los valores de fábrica.
+const CLAVES_PREFERENCIAS_VOZ = [
+  "medusaVozActiva", "medusaVozModo", "medusaVozTipo", "medusaVozVelocidad", "medusaVozTono",
+  "medusaVozVolumenPersonalizada", "medusaVozPersonalizadaURI", "medusaVozIA", "medusaObjetivo"
+];
 const CLAVES_PREFERENCIAS = [
   "medusaBackendUrl", "medusaColor", "medusaAutoColor", "medusaAnimActiva",
-  "medusaVozActiva", "medusaVozTipo", "medusaVozVelocidad", "medusaVozTono", "medusaVozIA"
+  ...CLAVES_PREFERENCIAS_VOZ
 ];
 if (restaurarConfigBtn) {
   restaurarConfigBtn.addEventListener("click", () => {
     if (!confirm("¿Restaurar la configuración a los valores predeterminados? Esto no borra documentos ni conversaciones, porque esos no se guardan.")) return;
     for (const clave of CLAVES_PREFERENCIAS) localStorage.removeItem(clave);
+    location.reload();
+  });
+}
+if (restaurarVozBtn) {
+  restaurarVozBtn.addEventListener("click", () => {
+    if (!confirm("¿Restaurar solo la configuración de voz (modo, tono, velocidad, volumen, voz IA) a los valores predeterminados?")) return;
+    for (const clave of CLAVES_PREFERENCIAS_VOZ) localStorage.removeItem(clave);
     location.reload();
   });
 }
