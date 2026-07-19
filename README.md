@@ -31,8 +31,20 @@ que dice — pensada como ayuda para estudiar.
   tono y ritmo acordes — no todo se lee con la misma cadencia. La
   división en fragmentos evita cortar decimales, fechas, abreviaturas,
   URLs y emails a la mitad.
-- Progreso de lectura visible ("Fragmento 8 de 24 — 33% completado") y
-  subtítulos en pantalla con el texto que se está diciendo en ese momento.
+- Progreso de lectura visible ("Fragmento 8 de 24 — 33% completado —
+  Página 3 — ~2 min restantes", con página y tiempo restante cuando hay
+  información suficiente para estimarlos) y subtítulos en pantalla con el
+  texto que se está diciendo en ese momento.
+- Botón "📄 Ver documento": muestra el texto completo con el fragmento que
+  se está leyendo resaltado (se actualiza y hace scroll automático a
+  medida que avanza la lectura), y una tabla de contenidos cuando el
+  documento tiene títulos (DOCX) con la opción de tocar un título para
+  "leer solo esa sección".
+- El progreso de lectura se guarda automáticamente: si volvés a cargar el
+  mismo documento, aparece un botón "Continuar donde quedaste".
+- Botón "⬇️ Descargar audio" para guardar el .mp3 del fragmento actual
+  cuando se está leyendo con voz IA (no disponible con la voz gratuita
+  del navegador, que no genera un archivo).
 - Tras cargar un documento, un panel pregunta "¿Qué querés lograr con
   este documento?" (entenderlo, estudiar, presentar, resumen, escucharlo
   completo, o buscar algo puntual) y ajusta el modo de voz y el estilo de
@@ -308,6 +320,13 @@ repositorio, apuntando a "GitHub Actions" como origen.
 
 ## Limitaciones conocidas
 
+- **Página actual y tiempo restante son aproximados**: se calculan a
+  partir de la posición del fragmento dentro del texto, no de una medición
+  real del motor de voz — pueden desviarse un poco cerca de los límites de
+  página, y el tiempo restante asume un ritmo de habla típico (no el ritmo
+  real de tu dispositivo o de ElevenLabs). "Leer solo esta sección" no
+  guarda progreso para "Continuar donde quedaste" (los índices de esa
+  lectura parcial no corresponden al documento completo).
 - **Voz del navegador**: la calidad y el catálogo de voces en español
   dependen del sistema operativo, no de MedusaLee. En Safari/iPhone en
   particular, el `pitch` se aplica de forma limitada — si "Hombre" y

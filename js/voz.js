@@ -303,12 +303,12 @@ const PATRONES_PROTEGER_PUNTO = [
 function protegerPuntuacion(texto) {
   let protegido = texto;
   for (const patron of PATRONES_PROTEGER_PUNTO) {
-    protegido = protegido.replace(patron, m => m.replace(/\./g, " "));
+    protegido = protegido.replace(patron, m => m.replace(/\./g, "\u0000"));
   }
   return protegido;
 }
 function restaurarPuntuacion(texto) {
-  return texto.replace(/ /g, ".");
+  return texto.replace(/\u0000/g, ".");
 }
 
 const LARGO_FRAGMENTO_MINIMO = 20; // evita fragmentos de una sola palabra
@@ -531,10 +531,20 @@ function detenerLecturaPorNuevoDocumento() {
   lecturaPausada = false;
   fragmentosLectura = [];
   fragmentoActualIndex = 0;
+  lecturaRestringidaASeccion = false;
   limpiarCacheAudioIA(); // libera los ObjectURL cacheados del documento anterior
   actualizarSubtitulo("");
   if (progresoLecturaEl) progresoLecturaEl.textContent = "";
   sincronizarBotonPausa();
+  // Documento nuevo: la vista/índice/progreso guardado del anterior ya no
+  // corresponden a nada.
+  vistaDocumentoFragmentos = [];
+  vistaDocumentoRenderizada = false;
+  seccionesToc = [];
+  if (documentoVistaPanel) documentoVistaPanel.hidden = true;
+  if (verDocumentoBtn) verDocumentoBtn.setAttribute("aria-expanded", "false");
+  if (continuarLecturaBtn) continuarLecturaBtn.hidden = true;
+  if (descargarAudioBtn) descargarAudioBtn.hidden = true;
 }
 
 // === Lectura fragmento por fragmento, con progreso y navegación ===
@@ -555,7 +565,15 @@ function actualizarProgreso() {
   if (!total) { progresoLecturaEl.textContent = ""; return; }
   const actual = Math.min(fragmentoActualIndex + 1, total);
   const pct = Math.round((actual / total) * 100);
-  progresoLecturaEl.textContent = `Fragmento ${actual} de ${total} — ${pct}% completado`;
+  const partes = [`Fragmento ${actual} de ${total} — ${pct}% completado`];
+  const pagina = paginaDelFragmentoActual();
+  if (pagina) partes.push(`Página ${pagina}`);
+  const tiempoRestante = estimarTiempoRestante(fragmentosLectura, fragmentoActualIndex, lecturaIAActiva ? 1 : vozVelocidad);
+  if (tiempoRestante) partes.push(tiempoRestante);
+  progresoLecturaEl.textContent = partes.join(" — ");
+  actualizarResaltadoVista();
+  guardarProgresoLectura();
+  actualizarBotonDescargaAudio();
 }
 
 function prepararLectura(texto) {
@@ -719,6 +737,7 @@ async function reproducirBloqueIA(indice) {
     return;
   }
   if (miToken !== lecturaToken) return;
+  actualizarBotonDescargaAudio(); // recién ahora el audio de este bloque quedó cacheado
 
   // Mientras suena este bloque, se pide el siguiente en paralelo (si
   // existe), para que ya esté listo cuando termine y no haya silencio.
@@ -772,6 +791,291 @@ async function actualizarVocesIADisponibles() {
 }
 document.addEventListener("medusa:backend-verificado", actualizarVocesIADisponibles);
 
+// === Experiencia de lectura: pagina actual, tiempo restante, resaltado
+// del texto en un panel "Ver documento", continuar donde quedaste, tabla
+// de contenidos y descarga de audio ===
+// Todo esto es aditivo: no cambia la forma de fragmentosLectura/bloquesIA
+// (siguen siendo arrays de strings, ya probados), para no arriesgar una
+// regresion en la lectura en si. En vez de eso, se calculan offsets
+// aproximados dentro de documentoCargado para ubicar la pagina y el
+// fragmento correspondiente en la vista del documento.
+
+const continuarLecturaBtn = document.getElementById("continuarLecturaBtn");
+const verDocumentoBtn = document.getElementById("verDocumentoBtn");
+const documentoVistaPanel = document.getElementById("documentoVistaPanel");
+const documentoVistaTexto = document.getElementById("documentoVistaTexto");
+const documentoVistaToc = document.getElementById("documentoVistaToc");
+const documentoVistaTocLista = document.getElementById("documentoVistaTocLista");
+const descargarAudioBtn = document.getElementById("descargarAudioBtn");
+
+const CLAVE_PROGRESO_LECTURA = "medusaProgresoLectura";
+const MAX_FRAGMENTOS_VISTA = 400; // limite razonable: evita crear miles de nodos DOM en documentos enormes
+
+// true mientras se esta leyendo solo una seccion (ver leerSeccion): en ese
+// caso los offsets de fragmentosLectura no corresponden a documentoCargado
+// completo, asi que se evita mostrar pagina/guardar progreso con ellos.
+let lecturaRestringidaASeccion = false;
+
+// Hash simple (no criptografico, solo para detectar "es el mismo
+// documento que la vez pasada").
+function hashSimpleTexto(texto) {
+  let h = 5381;
+  for (let i = 0; i < texto.length; i++) h = ((h * 33) ^ texto.charCodeAt(i)) >>> 0;
+  return `${texto.length}-${h.toString(36)}`;
+}
+
+// Limites de pagina dentro de documentoCargado, a partir de
+// documentoBloques (solo lo trae PDF, como {pagina, texto}). null si el
+// documento no tiene informacion de pagina (DOCX/TXT/URL generica).
+function construirLimitesPaginas() {
+  if (typeof documentoBloques === "undefined" || !documentoBloques.length || documentoBloques[0].pagina === undefined) return null;
+  const limites = [];
+  let offset = 0;
+  for (const b of documentoBloques) {
+    offset += b.texto.length + 1; // +1 por el separador "\n" que documentos.js usa al unir
+    limites.push({ finOffset: offset, pagina: b.pagina });
+  }
+  return limites;
+}
+
+function paginaParaOffset(offset, limites) {
+  for (const l of limites) if (offset < l.finOffset) return l.pagina;
+  return limites.length ? limites[limites.length - 1].pagina : null;
+}
+
+// Offset aproximado (dentro del array de fragmentos activo) del fragmento
+// que se esta leyendo ahora mismo.
+function offsetFragmentoActual() {
+  if (!fragmentosLectura.length) return null;
+  let offset = 0;
+  for (let i = 0; i < fragmentoActualIndex && i < fragmentosLectura.length; i++) offset += fragmentosLectura[i].length + 1;
+  return offset;
+}
+
+function paginaDelFragmentoActual() {
+  if (lecturaRestringidaASeccion) return null;
+  const limites = construirLimitesPaginas();
+  if (!limites) return null;
+  const offset = offsetFragmentoActual();
+  if (offset === null) return null;
+  return paginaParaOffset(offset, limites);
+}
+
+// Estimacion aproximada de cuanto falta, a partir de un ritmo de habla
+// tipico (unos 13 caracteres por segundo a velocidad 1x). No puede ser
+// exacta: depende de pausas entre fragmentos, del motor de voz real, y de
+// las pausas que agrega analizarFragmento().
+const CARACTERES_POR_SEGUNDO_BASE = 13;
+function estimarTiempoRestante(fragmentos, indiceActual, factorVelocidad) {
+  let caracteresRestantes = 0;
+  for (let i = indiceActual; i < fragmentos.length; i++) caracteresRestantes += fragmentos[i].length;
+  const segundos = caracteresRestantes / (CARACTERES_POR_SEGUNDO_BASE * Math.max(0.3, factorVelocidad || 1));
+  if (!isFinite(segundos) || segundos <= 0) return "";
+  if (segundos < 60) return "~1 min restante";
+  const minutos = Math.round(segundos / 60);
+  return `~${minutos} min restante${minutos === 1 ? "" : "s"}`;
+}
+
+// --- Vista del documento completo (panel "Ver documento") ---
+let vistaDocumentoFragmentos = []; // [{texto, pagina, inicioOffset}]
+let vistaDocumentoRenderizada = false;
+
+function construirVistaDocumento() {
+  vistaDocumentoFragmentos = [];
+  vistaDocumentoRenderizada = false;
+  if (!documentoCargado) return;
+  const limites = construirLimitesPaginas();
+  const trozos = dividirTextoParaHabla(documentoCargado, 240);
+  let offset = 0;
+  vistaDocumentoFragmentos = trozos.map(texto => {
+    const inicioOffset = offset;
+    offset += texto.length + 1;
+    return { texto, pagina: limites ? paginaParaOffset(inicioOffset, limites) : null, inicioOffset };
+  });
+}
+
+function renderizarVistaDocumento() {
+  if (!documentoVistaTexto || vistaDocumentoRenderizada) return;
+  documentoVistaTexto.innerHTML = "";
+  const limite = Math.min(vistaDocumentoFragmentos.length, MAX_FRAGMENTOS_VISTA);
+  for (let i = 0; i < limite; i++) {
+    const span = document.createElement("span");
+    span.className = "frag";
+    span.dataset.indice = String(i);
+    span.textContent = vistaDocumentoFragmentos[i].texto + " ";
+    documentoVistaTexto.appendChild(span);
+  }
+  if (vistaDocumentoFragmentos.length > MAX_FRAGMENTOS_VISTA) {
+    const aviso = document.createElement("div");
+    aviso.className = "frag-truncado";
+    aviso.textContent = `(vista recortada: se muestran los primeros ${MAX_FRAGMENTOS_VISTA} fragmentos de ${vistaDocumentoFragmentos.length} -- la lectura en voz alta si llega hasta el final)`;
+    documentoVistaTexto.appendChild(aviso);
+  }
+  vistaDocumentoRenderizada = true;
+}
+
+function actualizarResaltadoVista() {
+  if (!documentoVistaTexto || !vistaDocumentoRenderizada || !vistaDocumentoFragmentos.length) return;
+  const anterior = documentoVistaTexto.querySelector(".frag-actual");
+  if (anterior) anterior.classList.remove("frag-actual");
+  if (lecturaRestringidaASeccion) return; // los offsets de la vista no corresponden a esta lectura parcial
+  const offsetActual = offsetFragmentoActual();
+  if (offsetActual === null) return;
+  let elegido = null;
+  for (const f of vistaDocumentoFragmentos) {
+    if (f.inicioOffset <= offsetActual) elegido = f; else break;
+  }
+  if (!elegido) return;
+  const indiceVista = vistaDocumentoFragmentos.indexOf(elegido);
+  if (indiceVista >= MAX_FRAGMENTOS_VISTA) return;
+  const span = documentoVistaTexto.querySelector(`[data-indice="${indiceVista}"]`);
+  if (span) {
+    span.classList.add("frag-actual");
+    if (!documentoVistaPanel.hidden) {
+      span.scrollIntoView({ block: "center", behavior: (typeof prefiereMenosMovimiento !== "undefined" && prefiereMenosMovimiento) ? "auto" : "smooth" });
+    }
+  }
+}
+
+// --- Tabla de contenidos (solo DOCX: documentoBloques trae tipo:"titulo") ---
+let seccionesToc = []; // [{titulo, inicioOffset, finOffset}]
+function construirToc() {
+  seccionesToc = [];
+  if (typeof documentoBloques === "undefined" || !documentoBloques.length || documentoBloques[0].tipo === undefined) return;
+  let offset = 0;
+  const titulos = [];
+  for (const b of documentoBloques) {
+    if (b.tipo === "titulo" && b.texto.trim()) titulos.push({ titulo: b.texto, inicioOffset: offset });
+    offset += b.texto.length + 1;
+  }
+  for (let i = 0; i < titulos.length; i++) {
+    titulos[i].finOffset = i + 1 < titulos.length ? titulos[i + 1].inicioOffset : documentoCargado.length;
+  }
+  seccionesToc = titulos;
+}
+
+function renderizarToc() {
+  if (!documentoVistaToc || !documentoVistaTocLista) return;
+  if (!seccionesToc.length) { documentoVistaToc.hidden = true; return; }
+  documentoVistaTocLista.innerHTML = "";
+  seccionesToc.forEach(seccion => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = seccion.titulo;
+    btn.addEventListener("click", () => leerSeccion(seccion));
+    documentoVistaTocLista.appendChild(btn);
+  });
+  documentoVistaToc.hidden = false;
+}
+
+// "Leer solo esta seccion": arranca la lectura (con el motor que este
+// activo) usando solo el texto entre el titulo elegido y el proximo
+// titulo (o el final del documento).
+function leerSeccion(seccion) {
+  const textoSeccion = documentoCargado.slice(seccion.inicioOffset, seccion.finOffset).trim();
+  if (!textoSeccion) return;
+  toggleMenu(false);
+  if (documentoVistaPanel) documentoVistaPanel.hidden = true;
+  if (verDocumentoBtn) verDocumentoBtn.setAttribute("aria-expanded", "false");
+
+  const usarIA = vozLecturaIA && vozIA && vozModo !== "robotica";
+  if (usarIA) {
+    detenerTodoAhora();
+    lecturaRestringidaASeccion = true;
+    limpiarCacheAudioIA();
+    bloquesIA = dividirTextoParaHabla(textoSeccion, 500);
+    marcarEstadoLectura(`Leyendo solo la seccion "${seccion.titulo}"...`);
+    irABloqueIA(0);
+    return;
+  }
+  detenerTodoAhora();
+  lecturaRestringidaASeccion = true;
+  prepararLectura(textoSeccion);
+  lecturaEnCurso = true;
+  lecturaPausada = false;
+  sincronizarBotonPausa();
+  marcarEstadoLectura(`Leyendo solo la seccion "${seccion.titulo}"...`);
+  hablarFragmentoActual();
+}
+
+if (verDocumentoBtn) {
+  verDocumentoBtn.addEventListener("click", () => {
+    const abrir = documentoVistaPanel.hidden;
+    if (abrir) {
+      if (!vistaDocumentoFragmentos.length) construirVistaDocumento();
+      if (!seccionesToc.length) construirToc();
+      renderizarVistaDocumento();
+      renderizarToc();
+      actualizarResaltadoVista();
+    }
+    documentoVistaPanel.hidden = !abrir;
+    verDocumentoBtn.setAttribute("aria-expanded", String(abrir));
+  });
+}
+
+// --- Guardado automatico de progreso + "Continuar donde quedaste" ---
+function guardarProgresoLectura() {
+  if (lecturaRestringidaASeccion || !documentoCargado || !fragmentosLectura.length) return;
+  try {
+    localStorage.setItem(CLAVE_PROGRESO_LECTURA, JSON.stringify({
+      hash: hashSimpleTexto(documentoCargado),
+      indice: fragmentoActualIndex,
+      motor: lecturaIAActiva ? "ia" : "navegador",
+      timestamp: Date.now()
+    }));
+  } catch {
+    // localStorage lleno o bloqueado (por ejemplo, modo privado): no es
+    // critico para seguir leyendo, se ignora.
+  }
+}
+
+function progresoGuardadoParaDocumentoActual() {
+  if (!documentoCargado) return null;
+  try {
+    const datos = JSON.parse(localStorage.getItem(CLAVE_PROGRESO_LECTURA) || "null");
+    if (!datos || datos.hash !== hashSimpleTexto(documentoCargado)) return null;
+    return datos;
+  } catch {
+    return null;
+  }
+}
+
+function ofrecerContinuarLectura() {
+  if (!continuarLecturaBtn) return;
+  const progreso = progresoGuardadoParaDocumentoActual();
+  if (!progreso || !(progreso.indice > 0)) { continuarLecturaBtn.hidden = true; return; }
+  continuarLecturaBtn.textContent = `Continuar donde quedaste (fragmento ${progreso.indice + 1})`;
+  continuarLecturaBtn.hidden = false;
+  continuarLecturaBtn.onclick = () => {
+    continuarLecturaBtn.hidden = true;
+    lecturaRestringidaASeccion = false;
+    if (progreso.motor === "ia" && vozLecturaIA && vozIA && vozModo !== "robotica") {
+      limpiarCacheAudioIA();
+      bloquesIA = dividirTextoParaHabla(documentoCargado, 500);
+      irABloqueIA(Math.max(0, Math.min(progreso.indice, bloquesIA.length - 1)));
+      return;
+    }
+    prepararLectura(documentoCargado);
+    lecturaEnCurso = true;
+    lecturaPausada = false;
+    sincronizarBotonPausa();
+    irAFragmento(Math.max(0, Math.min(progreso.indice, fragmentosLectura.length - 1)));
+  };
+}
+document.addEventListener("medusa:documento-listo", ofrecerContinuarLectura);
+
+// --- Descarga del audio IA cacheado del fragmento actual ---
+function actualizarBotonDescargaAudio() {
+  if (!descargarAudioBtn) return;
+  if (!lecturaIAActiva) { descargarAudioBtn.hidden = true; return; }
+  const entrada = cacheAudioIA.get(fragmentoActualIndex);
+  if (!entrada) { descargarAudioBtn.hidden = true; return; }
+  descargarAudioBtn.href = entrada.url;
+  descargarAudioBtn.download = `medusalee-fragmento-${fragmentoActualIndex + 1}.mp3`;
+  descargarAudioBtn.hidden = false;
+}
+
+
 // === Controles de reproducción ===
 // playBtn: si el checkbox "Leer documento completo con voz IA" está
 // activo (y hay voz IA configurada), usa el motor de IA con cola y
@@ -783,6 +1087,8 @@ playBtn.addEventListener("click", async () => {
     return;
   }
   detenerTodoAhora();
+  lecturaRestringidaASeccion = false;
+  if (continuarLecturaBtn) continuarLecturaBtn.hidden = true;
 
   const usarIA = vozLecturaIA && vozIA && vozModo !== "robotica";
   if (usarIA) {
@@ -810,6 +1116,7 @@ if (reiniciarVozBtn) {
   reiniciarVozBtn.addEventListener("click", () => {
     if (!documentoCargado) return;
     marcarEstadoLectura("↻ Reiniciando desde el principio...");
+    lecturaRestringidaASeccion = false;
     if (lecturaIAActiva) { irABloqueIA(0); return; }
     if (!fragmentosLectura.length) prepararLectura(documentoCargado);
     irAFragmento(0);

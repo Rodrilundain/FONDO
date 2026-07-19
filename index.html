@@ -143,6 +143,8 @@
     <div class="status" id="progresoLectura" role="status" aria-live="polite"></div>
     <div class="subtitulos" id="subtitulosVoz" role="status" aria-live="polite" hidden></div>
 
+    <button type="button" id="continuarLecturaBtn" class="btn-stop btn-continuar" hidden></button>
+
     <div class="btn-row" id="playbackControls" hidden>
       <button type="button" id="detenerVoz" class="btn-stop btn-detener" aria-label="Detener lectura inmediatamente">🔇 Detener</button>
       <button type="button" id="playBtn" class="btn-stop" aria-label="Reproducir lectura del documento">▶️ Reproducir</button>
@@ -150,6 +152,16 @@
       <button type="button" id="fragmentoAnteriorBtn" class="btn-stop" aria-label="Ir al fragmento anterior">⏮️ Anterior</button>
       <button type="button" id="fragmentoSiguienteBtn" class="btn-stop" aria-label="Ir al fragmento siguiente">⏭️ Siguiente</button>
       <button type="button" id="reiniciarVoz" class="btn-stop" aria-label="Reiniciar lectura desde el principio">↻ Reiniciar</button>
+      <button type="button" id="verDocumentoBtn" class="btn-stop" aria-label="Ver el documento con el texto actual resaltado" aria-expanded="false" aria-controls="documentoVistaPanel">📄 Ver documento</button>
+      <a href="#" id="descargarAudioBtn" class="btn-stop" download hidden aria-label="Descargar el audio de voz IA del fragmento actual">⬇️ Descargar audio</a>
+    </div>
+
+    <div class="documento-vista" id="documentoVistaPanel" hidden>
+      <div class="documento-vista-toc" id="documentoVistaToc" hidden>
+        <div class="documento-vista-toc-titulo">📑 Índice — tocá un título para leer solo esa sección</div>
+        <div class="documento-vista-toc-lista" id="documentoVistaTocLista"></div>
+      </div>
+      <div class="documento-vista-texto" id="documentoVistaTexto" role="region" aria-label="Texto del documento con el fragmento actual resaltado"></div>
     </div>
   </div>
 
