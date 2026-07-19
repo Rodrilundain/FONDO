@@ -226,7 +226,9 @@ button { min-height: 44px; min-width: 44px; }
 .menu-btn {
   position: absolute;
   top: 15px; right: 20px;
-  z-index: 10;
+  /* Por encima del backdrop (22) y del propio menú (25): así el botón
+     sigue tocable para cerrar el menú mientras está abierto. */
+  z-index: 30;
   width: 32px; height: 24px;
   cursor: pointer;
   display: flex; flex-direction: column;
@@ -241,6 +243,20 @@ button { min-height: 44px; min-width: 44px; }
   border-radius: 2px;
   transition: 0.3s;
 }
+/* Fondo oscuro detrás del menú: antes no había nada, así que el contenido
+   de atrás (controles de reproducción, chat) se veía asomando de forma
+   desprolija en celular, y además el chat (z-index más alto que el menú)
+   quedaba tapando parte del menú en vez de al revés. El backdrop tapa
+   todo detrás, y el menú/menú-btn ahora van por encima de todo lo demás
+   mientras está abierto. */
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 22;
+  display: none;
+}
+.menu-backdrop.open { display: block; }
 .menu {
   position: absolute;
   top: 55px; right: 15px;
@@ -248,7 +264,7 @@ button { min-height: 44px; min-width: 44px; }
   max-height: calc(100vh - 75px);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  background: rgba(0,0,0,0.85);
+  background: rgba(0,0,0,0.92);
   border: 1px solid rgba(255,255,255,0.1);
   border-radius: 12px;
   box-shadow: 0 8px 20px rgba(0,0,0,0.6);
@@ -256,10 +272,21 @@ button { min-height: 44px; min-width: 44px; }
   display: none;
   flex-direction: column;
   gap: 10px;
-  z-index: 15;
+  z-index: 25;
   backdrop-filter: blur(8px);
 }
 .menu.open { display: flex; }
+
+/* En celular, el menú angosto (270px) dejaba una franja grande a la
+   izquierda donde se veía el fondo asomando — se lo ensancha para
+   aprovechar mejor la pantalla (con el backdrop ya no hace falta que sea
+   angosto para "dejar ver" el resto). */
+@media (max-width: 480px) {
+  .menu {
+    top: 55px; right: 10px; left: 10px;
+    width: auto;
+  }
+}
 .menu label {
   font-size: 0.9em;
   color: #9cdcff;
