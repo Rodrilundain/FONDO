@@ -13,3 +13,8 @@ services:
       # web de Render, donde pegás tu clave real.
       - key: GROQ_API_KEY
         sync: false
+      # ELEVENLABS_API_KEY: mismo caso, se pega en el formulario de Render,
+      # nunca en este archivo. Es opcional: sin ella, el chat responde con
+      # texto y voz del navegador, sin la voz de IA.
+      - key: ELEVENLABS_API_KEY
+        sync: false

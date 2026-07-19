@@ -244,6 +244,11 @@
       <input type="range" id="vozVelocidad" min="0.5" max="2" step="0.1" value="1">
     </div>
 
+    <div>
+      <label><input type="checkbox" id="vozIA" checked> 🧠 Voz IA (ElevenLabs) en las respuestas del chat</label>
+      <div class="status">Requiere el backend con ELEVENLABS_API_KEY configurada. La lectura del documento completo sigue usando la voz del navegador (gratis, sin límite de caracteres).</div>
+    </div>
+
     <div class="url-box">
       <label for="docUrl">🗂️ URL documento</label>
       <input type="text" id="docUrl" placeholder="https://ejemplo.com/documento">
@@ -306,6 +311,7 @@
     const velocidadValor = document.getElementById("velocidadValor");
     const vozTonoSlider = document.getElementById("vozTono");
     const tonoValor = document.getElementById("tonoValor");
+    const vozIAToggle = document.getElementById("vozIA");
     const playBtn = document.getElementById("playBtn");
     const pauseBtn = document.getElementById("pauseBtn");
     const resumeBtn = document.getElementById("resumeBtn");
@@ -356,7 +362,9 @@
     let vozTipo = vozTipoSelect.value; // "robotica" | "hombre" | "mujer"
     let vozVelocidad = parseFloat(vozVelocidadSlider.value);
     let vozTonoManual = null; // null = usar el automático según vozTipo
+    let vozIA = vozIAToggle.checked;
 
+    vozIAToggle.addEventListener("change", e => { vozIA = e.target.checked; });
     vozActivaToggle.addEventListener("change", e => {
       vozActiva = e.target.checked;
       if (!vozActiva) window.speechSynthesis.cancel();
@@ -529,6 +537,37 @@
         if (voice) utterance.voice = voice;
         window.speechSynthesis.speak(utterance);
       }
+    }
+
+    // Voz de IA (ElevenLabs) vía el backend, solo para las respuestas
+    // cortas del chat — la lectura del documento completo se queda con la
+    // voz del navegador (gratis, sin límite de caracteres). "Robotrónica"
+    // tampoco usa IA a propósito: se supone que suene sintética.
+    async function speakConIA(text) {
+      if (!vozActiva || !vozIA || !BACKEND_URL || !text || vozTipo === "robotica") return false;
+      try {
+        const res = await fetch(`${BACKEND_URL}/tts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, tipo: vozTipo })
+        });
+        if (!res.ok) return false;
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audio.playbackRate = vozVelocidad;
+        audio.addEventListener("ended", () => URL.revokeObjectURL(url));
+        await audio.play();
+        return true;
+      } catch (err) {
+        console.warn("Voz IA (ElevenLabs) falló, uso la voz del navegador:", err);
+        return false;
+      }
+    }
+
+    async function hablar(text) {
+      const ok = await speakConIA(text);
+      if (!ok) speakRobotic(text);
     }
 
     // === Documento remoto ===
@@ -786,7 +825,7 @@
         }
         const reply = data?.reply || "⚡ No obtuve respuesta.";
         messages.lastChild.textContent = reply;
-        speakRobotic(reply);
+        hablar(reply);
         pulse = 6;
       } catch (err) {
         console.error(err);
