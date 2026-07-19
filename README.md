@@ -35,8 +35,8 @@ app funciona igual).
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Rodrilundain/FONDO)
 
 1. Elegí "Deploy to Render" y conectá tu cuenta de GitHub.
-2. Cuando te lo pida, pegá tu `OPENAI_API_KEY` (se consigue en
-   https://platform.openai.com/api-keys).
+2. Cuando te pida la variable `OPENAI_API_KEY`, **pegá tu clave acá** (la
+   conseguís en https://platform.openai.com/api-keys).
 3. Cuando termine el deploy, copiá la URL que te da Render (algo como
    `https://medusa-backend.onrender.com`).
 4. En la app, abrí el menú (☰) y pegala en el campo "🔌 Backend de
@@ -46,7 +46,13 @@ app funciona igual).
 
 ```bash
 cd server
-cp .env.example .env   # y completá OPENAI_API_KEY
+cp .env.example .env
+```
+
+Abrí `server/.env` y reemplazá donde dice **"pega tu clave acá"** por tu
+`OPENAI_API_KEY` real. Después:
+
+```bash
 npm install
 npm start
 ```
