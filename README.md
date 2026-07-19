@@ -1,7 +1,7 @@
-# Medusa Inteligente – Grupo Fiancar
+# MedusaLee
 
-App interactiva (una medusa animada) que lee documentos y archivos en voz
-alta, con distintas voces configurables, y responde preguntas sobre el
+App interactiva (una medusa animada) que lee tus documentos y archivos en
+voz alta, con distintas voces configurables, y responde preguntas sobre el
 contenido cargado — pensada como ayuda para estudiar.
 
 🔗 **Demo:** https://rodrilundain.github.io/FONDO/
