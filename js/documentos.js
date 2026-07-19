@@ -21,6 +21,8 @@ const dropzone = document.getElementById("dropzone");
 const heroPanel = document.getElementById("heroPanel");
 
 let documentoCargado = "";
+let documentoBloques = []; // {pagina, texto} para PDF, {tipo, texto} para DOCX, [{texto}] para TXT/MD
+let documentoPareceEscaneado = false;
 let cargaEnCurso = false; // evita que dos cargas (archivo/URL) se pisen entre sí
 
 // Formato/tamaño permitido, mostrado también en la pantalla inicial.
@@ -108,6 +110,41 @@ const DOC_READERS = [
   }
 ];
 
+// Heurística "mejor esfuerzo": si el mismo texto inicial (primeros ~80
+// caracteres) se repite en la mayoría de las páginas, es probable que sea
+// un encabezado o pie de página fijo — se recorta de cada página. No es
+// perfecto (puede fallar con diseños poco convencionales), pero mejora la
+// lectura evitando repetir el mismo título en cada fragmento.
+function quitarEncabezadosPiesRepetidos(paginas) {
+  if (paginas.length < 3) return paginas;
+  // Se compara por las primeras N palabras (no por un prefijo de caracteres
+  // fijo): un título de encabezado suele ser corto y el contenido que le
+  // sigue cambia de página a página, así que comparar 80 caracteres exactos
+  // casi nunca coincide. Con 6 palabras alcanza para títulos típicos
+  // ("Manual de Usuario - Capítulo 1") sin matchear texto que por casualidad
+  // empiece igual.
+  const PALABRAS_ENCABEZADO = 6;
+  const candidatos = paginas.map(p => {
+    const palabras = p.texto.split(/\s+/).filter(Boolean).slice(0, PALABRAS_ENCABEZADO);
+    return palabras.length >= 3 ? palabras.join(" ") : null;
+  });
+  const conteo = {};
+  for (const c of candidatos) if (c) conteo[c] = (conteo[c] || 0) + 1;
+  const umbral = Math.max(2, Math.ceil(paginas.length * 0.6));
+  return paginas.map((p, i) => {
+    const c = candidatos[i];
+    if (c && conteo[c] >= umbral && p.texto.startsWith(c)) {
+      return { pagina: p.pagina, texto: p.texto.slice(c.length).trim() };
+    }
+    return p;
+  });
+}
+
+// Devuelve { texto, bloques, pareceEscaneado }. `bloques` mantiene la
+// página de origen de cada fragmento, para poder citar "Página N" en el
+// chat y mostrar la página actual durante la lectura. `texto` es la
+// concatenación plana, para no romper el código existente que todavía
+// espera un string (RAG simple, lectura por voz del navegador, etc).
 async function extractPdfText(arrayBuffer) {
   if (!window.pdfjsLib) throw new Error("No se pudo cargar el lector de PDF.");
   let pdf;
@@ -119,19 +156,40 @@ async function extractPdfText(arrayBuffer) {
     }
     throw new Error("El PDF parece estar dañado o no se pudo leer.");
   }
-  let text = "";
+  let paginas = [];
+  let totalCaracteresSinEspacios = 0;
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    text += content.items.map(item => item.str).join(" ") + "\n";
+    const texto = content.items.map(item => item.str).join(" ").replace(/\s+/g, " ").trim();
+    totalCaracteresSinEspacios += texto.replace(/\s/g, "").length;
+    paginas.push({ pagina: i, texto });
   }
-  return text;
+  paginas = quitarEncabezadosPiesRepetidos(paginas);
+  const texto = paginas.map(p => p.texto).join("\n");
+  // Heurística simple (no infalible): muy pocos caracteres por página sugiere
+  // que el PDF es una imagen escaneada sin capa de texto seleccionable.
+  const pareceEscaneado = pdf.numPages > 0 && (totalCaracteresSinEspacios / pdf.numPages) < 15;
+  return { texto, bloques: paginas, pareceEscaneado };
 }
 
+// Convierte a HTML (no a texto plano) para poder distinguir títulos,
+// párrafos e ítems de lista antes de aplanarlos — así el chat puede citar
+// "en el título X" y una futura tabla de contenidos puede listar los
+// títulos reales del documento.
 async function extractDocxText(arrayBuffer) {
   if (!window.mammoth) throw new Error("No se pudo cargar el lector de Word.");
-  const result = await mammoth.extractRawText({ arrayBuffer });
-  return result.value;
+  const result = await mammoth.convertToHtml({ arrayBuffer });
+  const doc = new DOMParser().parseFromString(result.value, "text/html");
+  const bloques = [];
+  doc.body.querySelectorAll("h1, h2, h3, h4, h5, h6, p, li").forEach(el => {
+    const texto = el.textContent.replace(/\s+/g, " ").trim();
+    if (!texto) return;
+    const tipo = /^H[1-6]$/.test(el.tagName) ? "titulo" : (el.tagName === "LI" ? "item" : "parrafo");
+    bloques.push({ tipo, texto });
+  });
+  const texto = bloques.map(b => b.texto).join("\n");
+  return { texto, bloques, pareceEscaneado: false };
 }
 
 // Detecta pdf/docx/txt por extensión (nombre de archivo local o URL).
@@ -161,7 +219,8 @@ function detectFileTypeByContent(contentType, buffer) {
 async function extractTextFromArrayBuffer(buffer, tipo) {
   if (tipo === "pdf") return extractPdfText(buffer);
   if (tipo === "docx") return extractDocxText(buffer);
-  return new TextDecoder("utf-8").decode(buffer);
+  const texto = new TextDecoder("utf-8").decode(buffer).replace(/\s+/g, " ").trim();
+  return { texto, bloques: texto ? [{ texto }] : [], pareceEscaneado: false };
 }
 
 // Convierte un link de Google Drive (vista/compartir) en un link de
@@ -172,16 +231,45 @@ function driveDirectDownload(url) {
   return m ? `https://drive.google.com/uc?export=download&id=${m[1]}` : url;
 }
 
-// Proxies para descargar el archivo binario: primero intento directo
-// (funciona si el servidor permite CORS), y si falla, dos proxies
-// públicos de respaldo.
+// Proxies para descargar el archivo binario si el backend propio no está
+// disponible: primero intento directo (funciona si el servidor permite
+// CORS), y si falla, dos proxies públicos de respaldo.
 const BINARY_PROXIES = [
   url => url,
   url => "https://corsproxy.io/?url=" + encodeURIComponent(url),
   url => "https://api.allorigins.win/raw?url=" + encodeURIComponent(url)
 ];
 
+// Descarga por el backend propio (/fetch-document), que valida protocolo,
+// dominio y tamaño, y bloquea IPs privadas (protección SSRF) — más seguro
+// que pedirle al navegador que baje bytes arbitrarios de un proxy público.
+// `BACKEND_URL` la define app.js; como esta función solo se ejecuta en
+// respuesta a una carga de documento (nunca durante el parseo inicial del
+// script), para entonces app.js ya terminó de inicializarla.
+async function descargarViaBackend(url) {
+  if (!BACKEND_URL) throw new Error("Backend no configurado");
+  const res = await fetch(`${BACKEND_URL}/fetch-document`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url })
+  });
+  if (!res.ok) {
+    let msg = "el backend respondió " + res.status;
+    try { const data = await res.json(); if (data?.error) msg = data.error; } catch { /* respuesta no era JSON */ }
+    throw new Error(msg);
+  }
+  const buffer = await res.arrayBuffer();
+  return { buffer, contentType: res.headers.get("content-type") || "" };
+}
+
 async function fetchBinary(url) {
+  if (BACKEND_URL) {
+    try {
+      return await descargarViaBackend(url);
+    } catch (err) {
+      console.warn("Descarga vía backend falló, probando proxies del navegador:", err);
+    }
+  }
   let lastError;
   for (const buildUrl of BINARY_PROXIES) {
     try {
@@ -197,6 +285,9 @@ async function fetchBinary(url) {
   throw lastError || new Error("No se pudo descargar el archivo.");
 }
 
+// Devuelve siempre { texto, bloques, pareceEscaneado }, sin importar si el
+// documento vino de un archivo binario (PDF/DOCX/TXT) o de una página web
+// leída como texto plano (en ese caso, un único bloque sin página/tipo).
 async function fetchDocumentText(originalUrl) {
   const url = driveDirectDownload(originalUrl);
   const tipoPorExtension = detectFileTypeByExtension(url);
@@ -221,8 +312,8 @@ async function fetchDocumentText(originalUrl) {
   let lastError;
   for (const reader of DOC_READERS) {
     try {
-      const text = await reader(originalUrl);
-      if (text) return text;
+      const texto = (await reader(originalUrl) || "").replace(/\s+/g, " ").trim();
+      if (texto) return { texto, bloques: [{ texto }], pareceEscaneado: false };
     } catch (err) {
       lastError = err;
       console.warn("Lector de documento falló, probando el siguiente:", err);
@@ -259,8 +350,8 @@ function mensajeAmigablePara(err, contexto) {
     : "⚠️ No pude procesar el archivo. Revisá que sea un PDF, Word, TXT o Markdown válido.";
 }
 
-function marcarListoParaLeer(nombreOEtiqueta) {
-  status.textContent = `✅ ${nombreOEtiqueta} Presioná ▶️ Reproducir para comenzar la lectura.`;
+function marcarListoParaLeer(nombreOEtiqueta, notaExtra) {
+  status.textContent = `✅ ${nombreOEtiqueta} Presioná ▶️ Reproducir para comenzar la lectura.` + (notaExtra ? ` ${notaExtra}` : "");
   chat.style.display = "flex";
   playbackControls.hidden = false;
   heroPanel.classList.add("documento-cargado");
@@ -281,13 +372,20 @@ async function loadDocumentFromUrl(url) {
   detenerLecturaPorNuevoDocumento();
   status.innerHTML = '<span class="spinner" aria-hidden="true"></span>Cargando documento...';
   try {
-    const texto = (await fetchDocumentText(url)).replace(/\s+/g, " ").trim();
-    if (!texto) throw new Error("vacio");
+    const { texto, bloques, pareceEscaneado } = await fetchDocumentText(url);
+    if (!texto) throw new Error(pareceEscaneado ? "pdf-vacio" : "vacio");
     documentoCargado = texto;
-    marcarListoParaLeer("Documento cargado correctamente.");
+    documentoBloques = bloques || [];
+    documentoPareceEscaneado = !!pareceEscaneado;
+    marcarListoParaLeer(
+      "Documento cargado correctamente.",
+      pareceEscaneado ? "⚠️ Parece un PDF escaneado (imagen): el texto extraído puede ser incompleto." : ""
+    );
   } catch (err) {
     console.error(err);
     documentoCargado = "";
+    documentoBloques = [];
+    documentoPareceEscaneado = false;
     status.textContent = mensajeAmigablePara(err, "url");
     speakRobotic("Error al leer el documento.");
   } finally {
@@ -322,13 +420,20 @@ async function procesarArchivo(file) {
   status.innerHTML = '<span class="spinner" aria-hidden="true"></span>Extrayendo texto...';
   try {
     const tipo = detectFileTypeByExtension(file.name) || "text";
-    const texto = (await extractTextFromArrayBuffer(await file.arrayBuffer(), tipo)).replace(/\s+/g, " ").trim();
-    if (!texto) throw new Error(tipo === "pdf" ? "pdf-vacio" : "vacio");
+    const { texto, bloques, pareceEscaneado } = await extractTextFromArrayBuffer(await file.arrayBuffer(), tipo);
+    if (!texto) throw new Error(pareceEscaneado ? "pdf-vacio" : (tipo === "pdf" ? "pdf-vacio" : "vacio"));
     documentoCargado = texto;
-    marcarListoParaLeer(`"${file.name}" cargado correctamente.`);
+    documentoBloques = bloques || [];
+    documentoPareceEscaneado = !!pareceEscaneado;
+    marcarListoParaLeer(
+      `"${file.name}" cargado correctamente.`,
+      pareceEscaneado ? "⚠️ Parece un PDF escaneado (imagen): el texto extraído puede ser incompleto." : ""
+    );
   } catch (err) {
     console.error(err);
     documentoCargado = "";
+    documentoBloques = [];
+    documentoPareceEscaneado = false;
     const contexto = err?.message === "pdf-vacio" ? "pdf-vacio" : (err?.message === "vacio" ? "vacio" : "archivo");
     status.textContent = mensajeAmigablePara(err, contexto);
     speakRobotic("Error al leer el archivo.");
