@@ -165,6 +165,11 @@
     }
     .msg.user { background: rgba(125,202,255,0.15); text-align: right; }
     .msg.bot { background: rgba(125,202,255,0.05); text-align: left; }
+    .question-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
     .chat input {
       padding: 8px 10px;
       border-radius: 8px;
@@ -174,6 +179,23 @@
       width: 100%;
       outline: none;
       font-family: inherit;
+    }
+    .chat #sendBtn {
+      flex: 0 0 auto;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: none;
+      background: #7dcaff;
+      color: #041018;
+      font-size: 1.1em;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .chat #sendBtn:hover {
+      background: #9cdcff;
     }
   </style>
 </head>
@@ -242,7 +264,10 @@
   <!-- Chat -->
   <div class="chat" id="chat">
     <div class="messages" id="messages"></div>
-    <input type="text" id="question" placeholder="Escribí tu pregunta y presioná Enter...">
+    <div class="question-row">
+      <input type="text" id="question" placeholder="Escribí tu pregunta...">
+      <button id="sendBtn" aria-label="Enviar pregunta">➤</button>
+    </div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -264,6 +289,7 @@
     const chat = document.getElementById("chat");
     const messages = document.getElementById("messages");
     const question = document.getElementById("question");
+    const sendBtn = document.getElementById("sendBtn");
     const vozActivaToggle = document.getElementById("vozActiva");
     const vozTipoSelect = document.getElementById("vozTipo");
     const vozVelocidadSlider = document.getElementById("vozVelocidad");
@@ -539,14 +565,17 @@
     })();
 
     // === Chat ===
+    function sendQuestion() {
+      const query = question.value.trim();
+      if (!query) return;
+      addMessage(query, "user");
+      question.value = "";
+      medusaRespond(query);
+    }
     question.addEventListener("keypress", e => {
-      if (e.key === "Enter" && question.value.trim()) {
-        const query = question.value.trim();
-        addMessage(query, "user");
-        question.value = "";
-        medusaRespond(query);
-      }
+      if (e.key === "Enter") sendQuestion();
     });
+    sendBtn.addEventListener("click", sendQuestion);
 
     function addMessage(text, sender) {
       const div = document.createElement("div");
