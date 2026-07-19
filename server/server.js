@@ -42,7 +42,15 @@ app.post("/ask", async (req, res) => {
       })
     });
     const data = await groqRes.json();
-    const reply = data.choices?.[0]?.message?.content || data.error?.message || "No pude generar una respuesta.";
+    if (!groqRes.ok) {
+      // Un error de Groq (clave inválida, rate limit, etc.) no es una
+      // respuesta válida del asistente: se devuelve como error real para
+      // que el frontend lo muestre como falla de conexión, no como si el
+      // asistente hubiera contestado eso.
+      const detalle = data.error?.message || `Groq respondió ${groqRes.status}`;
+      return res.status(groqRes.status).json({ reply: detalle, error: detalle });
+    }
+    const reply = data.choices?.[0]?.message?.content || "No pude generar una respuesta.";
     res.json({ reply });
   } catch (error) {
     console.error(error);
