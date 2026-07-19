@@ -87,6 +87,19 @@
       color: #9cdcff;
       opacity: 0.8;
     }
+    .btn-stop {
+      margin-top: 8px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(125,202,255,0.1);
+      color: #7dcaff;
+      font-size: 0.8em;
+      cursor: pointer;
+    }
+    .btn-stop:hover {
+      background: rgba(125,202,255,0.2);
+    }
 
     /* Chat */
     .chat {
@@ -153,10 +166,15 @@
       <label><input type="checkbox" id="autoColor"> Cambio automático</label>
     </div>
 
+    <div>
+      <label><input type="checkbox" id="vozRobotica" checked> 🤖 Voz robotrónica</label>
+    </div>
+
     <div class="url-box">
       <label for="docUrl">🗂️ URL documento</label>
       <input type="text" id="docUrl" placeholder="https://ejemplo.com/documento">
       <div class="status" id="status">Sin documento cargado</div>
+      <button id="detenerVoz" class="btn-stop">🔇 Detener voz</button>
     </div>
   </div>
 
@@ -180,6 +198,8 @@
     const chat = document.getElementById("chat");
     const messages = document.getElementById("messages");
     const question = document.getElementById("question");
+    const vozRoboticaToggle = document.getElementById("vozRobotica");
+    const detenerVozBtn = document.getElementById("detenerVoz");
 
     menuBtn.addEventListener("click", () => menu.classList.toggle("open"));
 
@@ -209,11 +229,56 @@
       return { r, g, b };
     }
 
+    // === Voz robotrónica ===
+    let vozRobotica = vozRoboticaToggle.checked;
+    vozRoboticaToggle.addEventListener("change", e => {
+      vozRobotica = e.target.checked;
+      if (!vozRobotica) window.speechSynthesis.cancel();
+    });
+    detenerVozBtn.addEventListener("click", () => window.speechSynthesis.cancel());
+
+    function chunkText(text, maxLen = 220) {
+      const sentences = text.match(/[^.!?]+[.!?]*/g) || [text];
+      const chunks = [];
+      let current = "";
+      for (const s of sentences) {
+        if ((current + s).length > maxLen) {
+          if (current) chunks.push(current.trim());
+          current = s;
+        } else {
+          current += s;
+        }
+      }
+      if (current) chunks.push(current.trim());
+      return chunks;
+    }
+
+    function pickRoboVoice() {
+      const voices = window.speechSynthesis.getVoices();
+      return voices.find(v => /es/i.test(v.lang)) || voices[0] || null;
+    }
+
+    function speakRobotic(text, { interrupt = true } = {}) {
+      if (!vozRobotica || !text || !("speechSynthesis" in window)) return;
+      if (interrupt) window.speechSynthesis.cancel();
+      const roboVoice = pickRoboVoice();
+      const chunks = chunkText(text);
+      for (const chunk of chunks) {
+        const utterance = new SpeechSynthesisUtterance(chunk);
+        utterance.lang = "es-ES";
+        utterance.pitch = 0.15;  // grave y metálico
+        utterance.rate = 0.95;
+        utterance.volume = 1;
+        if (roboVoice) utterance.voice = roboVoice;
+        window.speechSynthesis.speak(utterance);
+      }
+    }
+
     // === Documento remoto ===
     let documentoCargado = "";
 
-    docUrlInput.addEventListener("change", async () => {
-      const url = docUrlInput.value.trim();
+    async function loadDocumentFromUrl(url) {
+      url = (url || "").trim();
       if (!url) return;
       status.textContent = "Cargando documento...";
       try {
@@ -228,11 +293,26 @@
 
         status.textContent = "✅ Documento cargado correctamente.";
         chat.style.display = "flex";
+        speakRobotic(`Documento cargado correctamente. Iniciando lectura. ${documentoCargado}`);
       } catch (err) {
         console.error(err);
         status.textContent = "⚠️ Error al leer el documento.";
+        speakRobotic("Error al leer el documento.");
       }
-    });
+    }
+
+    docUrlInput.addEventListener("change", () => loadDocumentFromUrl(docUrlInput.value));
+
+    // Carga automática cuando el documento llega compartido por URL (?doc= o ?url=)
+    (function autoLoadSharedDoc() {
+      const params = new URLSearchParams(window.location.search);
+      const sharedUrl = params.get("doc") || params.get("url");
+      if (sharedUrl) {
+        docUrlInput.value = sharedUrl;
+        menu.classList.add("open");
+        loadDocumentFromUrl(sharedUrl);
+      }
+    })();
 
     // === Chat ===
     question.addEventListener("keypress", e => {
@@ -268,11 +348,15 @@
           })
         });
         const data = await res.json();
-        messages.lastChild.textContent = data.reply || "⚡ No obtuve respuesta.";
+        const reply = data.reply || "⚡ No obtuve respuesta.";
+        messages.lastChild.textContent = reply;
+        speakRobotic(reply);
         pulse = 6;
       } catch (err) {
         console.error(err);
-        messages.lastChild.textContent = "⚠️ Error al conectar con ChatGPT.";
+        const errorMsg = "⚠️ Error al conectar con ChatGPT.";
+        messages.lastChild.textContent = errorMsg;
+        speakRobotic(errorMsg);
       }
     }
 
