@@ -50,6 +50,16 @@ export function cargarAIConfig(env) {
     turnstile: {
       enabled: booleanoODefecto(env.TURNSTILE_ENABLED, false),
       secretKey: env.TURNSTILE_SECRET_KEY || "",
+      // La site key no es secreta -- se expone en /health para que el
+      // frontend la tome sola. Los demas son opcionales: si no se
+      // configuran, esos chequeos puntuales no se aplican (ver
+      // src/turnstile.js para el detalle de que campos existen de verdad
+      // en la respuesta de Cloudflare).
+      siteKey: env.TURNSTILE_SITE_KEY || "",
+      expectedHostname: env.TURNSTILE_EXPECTED_HOSTNAME || "",
+      expectedAction: env.TURNSTILE_EXPECTED_ACTION || "",
+      minScore: env.TURNSTILE_MIN_SCORE ? Number(env.TURNSTILE_MIN_SCORE) : null,
+      timeoutMs: numeroODefecto(env.TURNSTILE_TIMEOUT_MS, 8000),
     },
     rateLimit: {
       maxPorMinuto: numeroODefecto(env.AI_RATE_LIMIT_POR_MINUTO, 20),

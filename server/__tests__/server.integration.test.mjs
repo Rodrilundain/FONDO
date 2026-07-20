@@ -166,3 +166,83 @@ test("/fetch-document: sigue una redirección hacia otro host público y descarg
   assert.equal(llamadasSalientes, 2, "debería haber pedido primero la URL original y después la de destino");
   assert.equal(res.headers.get("x-original-url"), "https://example.com/destino-final");
 });
+
+test("/fetch-document: rechaza URLs con usuario y contraseña (user:pass@host)", async () => {
+  const res = await fetch(`${baseUrl}/fetch-document`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: "http://localhost:3000" },
+    body: JSON.stringify({ url: "https://usuario:clave@example.com/doc.pdf" })
+  });
+  assert.equal(res.status, 400);
+});
+
+test("/fetch-document: un Content-Length que supera 20MB se rechaza con 413 sin leer el cuerpo", async () => {
+  let seLeyoElCuerpo = false;
+  global.fetch = async (url, opts) => {
+    const destino = String(url);
+    if (destino.startsWith(baseUrl)) return fetchOriginal(destino, opts);
+    return {
+      status: 200,
+      ok: true,
+      headers: { get: (h) => (h.toLowerCase() === "content-length" ? String(21 * 1024 * 1024) : null) },
+      body: { getReader: () => ({ read: async () => { seLeyoElCuerpo = true; return { done: true, value: undefined }; }, cancel: async () => {} }) }
+    };
+  };
+  const res = await fetch(`${baseUrl}/fetch-document`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: "http://localhost:3000" },
+    body: JSON.stringify({ url: "https://example.com/pesado.pdf" })
+  });
+  assert.equal(res.status, 413);
+  assert.equal(seLeyoElCuerpo, false, "con Content-Length declarado de más de 20MB, ni siquiera debería empezar a leer el cuerpo");
+});
+
+test("/fetch-document: SIN Content-Length, el límite de 20MB igual se aplica cortando el streaming", async () => {
+  const CHUNK = new Uint8Array(5 * 1024 * 1024); // 5 MB por chunk
+  let chunksEntregados = 0;
+  global.fetch = async (url, opts) => {
+    const destino = String(url);
+    if (destino.startsWith(baseUrl)) return fetchOriginal(destino, opts);
+    return {
+      status: 200,
+      ok: true,
+      headers: { get: () => null }, // sin content-length ni content-type
+      body: {
+        getReader: () => ({
+          read: async () => {
+            if (chunksEntregados >= 6) return { done: true, value: undefined }; // 30MB si no se corta antes
+            chunksEntregados++;
+            return { done: false, value: CHUNK };
+          },
+          cancel: async () => {}
+        })
+      }
+    };
+  };
+  const res = await fetch(`${baseUrl}/fetch-document`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: "http://localhost:3000" },
+    body: JSON.stringify({ url: "https://example.com/pesado.bin" })
+  });
+  assert.equal(res.status, 413);
+  assert.ok(chunksEntregados <= 5, `debería haber cortado la descarga antes de llegar a 30MB (chunks leídos: ${chunksEntregados})`);
+});
+
+test("/fetch-document: timeout de la descarga se traduce en un error claro (502), no en un 500 crudo", async () => {
+  global.fetch = async (url, opts) => {
+    const destino = String(url);
+    if (destino.startsWith(baseUrl)) return fetchOriginal(destino, opts);
+    // Simula lo que hace AbortSignal.timeout(): la señal se dispara y fetch rechaza.
+    const err = new Error("The operation was aborted due to timeout");
+    err.name = "TimeoutError";
+    throw err;
+  };
+  const res = await fetch(`${baseUrl}/fetch-document`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: "http://localhost:3000" },
+    body: JSON.stringify({ url: "https://example.com/archivo-lento" })
+  });
+  assert.equal(res.status, 502);
+  const data = await res.json();
+  assert.equal(typeof data.error, "string");
+});

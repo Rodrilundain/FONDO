@@ -59,7 +59,11 @@ async function manejarGenerate(request, env, corsHeaders) {
     const resultadoTurnstile = await verificarTurnstile({
       token: payload.turnstileToken,
       secretKey: config.turnstile.secretKey,
-      remoteIp: ipDelPedido(request)
+      remoteIp: ipDelPedido(request),
+      expectedHostname: config.turnstile.expectedHostname || undefined,
+      expectedAction: config.turnstile.expectedAction || undefined,
+      minScore: config.turnstile.minScore,
+      timeoutMs: config.turnstile.timeoutMs
     });
     if (!resultadoTurnstile.success) {
       return errorSeguro(403, "No se pudo verificar que sos una persona. Recargá la página e intentá de nuevo.", corsHeaders);
@@ -137,6 +141,7 @@ function manejarHealth(env, corsHeaders) {
     geminiConfigurado: Boolean(config.gemini.apiKey),
     openrouterConfigurado: Boolean(config.openrouter.apiKey && config.openrouter.model),
     turnstileHabilitado: config.turnstile.enabled,
+    turnstileSiteKey: config.turnstile.siteKey || null,
     rateLimitBindingActivo: Boolean(env.RATE_LIMITER)
   }, 200, corsHeaders);
 }

@@ -42,6 +42,7 @@ async function verificarWorker() {
     const res = await fetch(`${WORKER_URL}/health`, { signal: AbortSignal.timeout(6000) });
     if (!res.ok) { workerConnStatus.textContent = `🔴 Worker de IA: respondió con error (${res.status})`; return; }
     const data = await res.json();
+    if (data.turnstileSiteKey && window.MedusaSeguridad) window.MedusaSeguridad.usarSiteKeyRemota(data.turnstileSiteKey);
     if (!data.geminiConfigurado && !data.openrouterConfigurado) {
       workerConnStatus.textContent = "🟡 Worker de IA: conectado, pero sin ningún proveedor configurado todavía.";
       return;

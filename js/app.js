@@ -76,7 +76,13 @@ async function verificarBackend() {
     backendConnStatus.textContent = res.ok
       ? "🟢 Backend: conectado"
       : `🔴 Backend: respondió con error (${res.status})`;
-    if (res.ok) document.dispatchEvent(new CustomEvent("medusa:backend-verificado"));
+    if (res.ok) {
+      document.dispatchEvent(new CustomEvent("medusa:backend-verificado"));
+      try {
+        const data = await res.clone().json();
+        if (data.turnstileSiteKey && window.MedusaSeguridad) window.MedusaSeguridad.usarSiteKeyRemota(data.turnstileSiteKey);
+      } catch (_) { /* /health no devolvió JSON válido: no es crítico acá */ }
+    }
   } catch (_) {
     backendConnStatus.textContent = "🔴 Backend: no responde (puede estar dormido — probá igual, la primera pregunta lo despierta).";
   }

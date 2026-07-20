@@ -8,18 +8,38 @@
 const TURNSTILE_SITE_KEY_STORAGE = "medusaTurnstileSiteKey";
 const SESSION_ID_STORAGE = "medusaSessionId";
 
+// Acción fija que se manda a Cloudflare al resolver el widget, y que el
+// backend/Worker pueden exigir de vuelta con TURNSTILE_EXPECTED_ACTION
+// (opcional -- si no está configurada esa variable, no se exige nada).
+const TURNSTILE_ACTION = "medusalee";
+
 let turnstileToken = "";
 let turnstileWidgetId = null;
 let promesaScriptTurnstile = null;
+// Site key "descubierta" automáticamente vía /health del backend/Worker
+// configurado (no se guarda en localStorage -- si cambiás de backend,
+// no queda pegada una site key de otro). La que el usuario pega a mano
+// en "Configuración avanzada" siempre tiene prioridad.
+let siteKeyRemota = "";
 
 function obtenerTurnstileSiteKey() {
-  return localStorage.getItem(TURNSTILE_SITE_KEY_STORAGE) || "";
+  return localStorage.getItem(TURNSTILE_SITE_KEY_STORAGE) || siteKeyRemota || "";
 }
 
 function guardarTurnstileSiteKey(valor) {
   const limpio = (valor || "").trim();
   if (limpio) localStorage.setItem(TURNSTILE_SITE_KEY_STORAGE, limpio);
   else localStorage.removeItem(TURNSTILE_SITE_KEY_STORAGE);
+}
+
+// Llamado desde app.js/aiWorker.js cuando /health del backend o del
+// Worker configurado trae turnstileSiteKey (no es secreta, está pensada
+// para ser pública). Si el usuario ya pegó una a mano, esta no la pisa.
+function usarSiteKeyRemota(valor) {
+  const limpio = (valor || "").trim();
+  if (!limpio || limpio === siteKeyRemota) return;
+  siteKeyRemota = limpio;
+  if (!localStorage.getItem(TURNSTILE_SITE_KEY_STORAGE)) inicializarTurnstile();
 }
 
 // ID aleatorio, generado una sola vez por navegador y persistido en
@@ -83,6 +103,7 @@ async function inicializarTurnstile() {
   turnstileToken = "";
   turnstileWidgetId = window.turnstile.render(contenedor, {
     sitekey: siteKey,
+    action: TURNSTILE_ACTION,
     callback: (token) => { turnstileToken = token; },
     "expired-callback": () => { turnstileToken = ""; },
     "error-callback": () => { turnstileToken = ""; }
@@ -92,6 +113,7 @@ async function inicializarTurnstile() {
 window.MedusaSeguridad = {
   obtenerTurnstileSiteKey,
   guardarTurnstileSiteKey,
+  usarSiteKeyRemota,
   idDeSesion,
   tokenTurnstileActual,
   inicializarTurnstile

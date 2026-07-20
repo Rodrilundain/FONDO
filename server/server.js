@@ -57,6 +57,17 @@ app.use(express.json({ limit: "1mb" }));
 // Turnstile todavía.
 const TURNSTILE_ENABLED = process.env.TURNSTILE_ENABLED === "true";
 const TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY || "";
+// La site key NO es secreta (está pensada para ser pública, se manda al
+// navegador) -- se expone en /health para que el frontend la tome sola
+// en vez de tener que pegarla a mano, ver js/seguridad.js.
+const TURNSTILE_SITE_KEY = process.env.TURNSTILE_SITE_KEY || "";
+// Opcionales: si no se configuran, esos chequeos puntuales simplemente no
+// se aplican (ver server/src/security/turnstile.js para el detalle de
+// qué campos de la respuesta de Cloudflare existen de verdad).
+const TURNSTILE_EXPECTED_HOSTNAME = process.env.TURNSTILE_EXPECTED_HOSTNAME || "";
+const TURNSTILE_EXPECTED_ACTION = process.env.TURNSTILE_EXPECTED_ACTION || "";
+const TURNSTILE_MIN_SCORE = process.env.TURNSTILE_MIN_SCORE ? Number(process.env.TURNSTILE_MIN_SCORE) : null;
+const TURNSTILE_TIMEOUT_MS = Number(process.env.TURNSTILE_TIMEOUT_MS) || 8000;
 
 async function exigirTurnstile(req, res, next) {
   if (!TURNSTILE_ENABLED) return next();
@@ -65,7 +76,15 @@ async function exigirTurnstile(req, res, next) {
     return res.status(500).json({ error: "La verificación de seguridad no está bien configurada en el servidor." });
   }
   const token = req.body?.turnstileToken;
-  const resultado = await verificarTurnstile({ token, secretKey: TURNSTILE_SECRET_KEY, remoteIp: req.ip });
+  const resultado = await verificarTurnstile({
+    token,
+    secretKey: TURNSTILE_SECRET_KEY,
+    remoteIp: req.ip,
+    expectedHostname: TURNSTILE_EXPECTED_HOSTNAME || undefined,
+    expectedAction: TURNSTILE_EXPECTED_ACTION || undefined,
+    minScore: TURNSTILE_MIN_SCORE,
+    timeoutMs: TURNSTILE_TIMEOUT_MS
+  });
   if (!resultado.success) {
     return res.status(403).json({ error: "No se pudo verificar que sos una persona. Recargá la página e intentá de nuevo.", codigo: "turnstile_invalido" });
   }
@@ -542,7 +561,11 @@ app.get("/health", async (_req, res) => {
     vozLocalHabilitada: voz.habilitada,
     vozLocalDisponible: voz.disponible,
     vozLocalEstado: voz.estado,
-    turnstileHabilitado: TURNSTILE_ENABLED
+    turnstileHabilitado: TURNSTILE_ENABLED,
+    // No es un secreto: la site key de Turnstile está pensada para viajar
+    // al navegador. Null (no "") cuando no hay nada configurado, para que
+    // el frontend distinga "no configurada" de "string vacío".
+    turnstileSiteKey: TURNSTILE_SITE_KEY || null
   });
 });
 

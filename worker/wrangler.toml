@@ -34,8 +34,19 @@ AI_RATE_LIMIT_POR_MINUTO = "20"
 # igual que antes, sin pedir ningun token. Para activarlo hace falta
 # ademas TURNSTILE_SECRET_KEY como secreto (nunca en este archivo --
 # "npx wrangler secret put TURNSTILE_SECRET_KEY"), y que el frontend
-# mande el token resuelto en payload.turnstileToken (ver js/config.js).
+# mande el token resuelto en payload.turnstileToken (ver js/seguridad.js).
 TURNSTILE_ENABLED = "false"
+# TURNSTILE_SITE_KEY no es secreta -- se expone en /health para que el
+# frontend la tome sola. Los siguientes tres son opcionales, cada uno solo
+# se aplica si se completa (ver src/turnstile.js para el detalle de que
+# campos existen de verdad en la respuesta de Cloudflare -- en particular,
+# Turnstile estandar NO devuelve "score", asi que TURNSTILE_MIN_SCORE
+# queda sin efecto salvo que algun tier lo agregue a la respuesta).
+# TURNSTILE_SITE_KEY = ""
+# TURNSTILE_EXPECTED_HOSTNAME = ""
+# TURNSTILE_EXPECTED_ACTION = "medusalee"
+# TURNSTILE_MIN_SCORE = ""
+# TURNSTILE_TIMEOUT_MS = "8000"
 # GEMINI_MODEL y OPENROUTER_MODEL tambien pueden ir aca (no son secretos,
 # son solo el nombre del modelo) -- se dejan comentados porque conviene
 # que los confirmes vos mismo contra la documentacion oficial antes de
