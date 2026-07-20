@@ -251,7 +251,7 @@ async function descargarViaBackend(url) {
   const res = await fetch(`${BACKEND_URL}/fetch-document`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url })
+    body: JSON.stringify({ url, turnstileToken: window.MedusaSeguridad?.tokenTurnstileActual() || undefined })
   });
   if (!res.ok) {
     let msg = "el backend respondió " + res.status;

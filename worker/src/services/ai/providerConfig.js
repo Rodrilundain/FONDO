@@ -47,5 +47,12 @@ export function cargarAIConfig(env) {
       apiKey: env.OPENROUTER_API_KEY || "",
       model: env.OPENROUTER_MODEL || "", // sin default a proposito
     },
+    turnstile: {
+      enabled: booleanoODefecto(env.TURNSTILE_ENABLED, false),
+      secretKey: env.TURNSTILE_SECRET_KEY || "",
+    },
+    rateLimit: {
+      maxPorMinuto: numeroODefecto(env.AI_RATE_LIMIT_POR_MINUTO, 20),
+    },
   };
 }

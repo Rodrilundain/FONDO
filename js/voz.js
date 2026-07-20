@@ -683,7 +683,10 @@ async function obtenerAudioBloqueIA(indice) {
     const res = await fetch(`${BACKEND_URL}/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: texto, tipo: generoParaElevenLabs(), contexto: "documento" })
+      body: JSON.stringify({
+        text: texto, tipo: generoParaElevenLabs(), contexto: "documento",
+        turnstileToken: window.MedusaSeguridad?.tokenTurnstileActual() || undefined
+      })
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -1239,7 +1242,10 @@ async function speakConIA(text) {
     const res = await fetch(`${BACKEND_URL}/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: textoLimpio, tipo: generoParaElevenLabs(), contexto: "chat" })
+      body: JSON.stringify({
+        text: textoLimpio, tipo: generoParaElevenLabs(), contexto: "chat",
+        turnstileToken: window.MedusaSeguridad?.tokenTurnstileActual() || undefined
+      })
     });
     if (!res.ok) {
       let codigo = "";

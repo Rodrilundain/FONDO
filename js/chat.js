@@ -323,7 +323,12 @@ async function medusaRespond(query) {
     const res = await fetchConReintento(`${BACKEND_URL}/ask`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ context: contexto, question: query, objetivo: typeof objetivoActual !== "undefined" ? objetivoActual : null })
+      body: JSON.stringify({
+        context: contexto,
+        question: query,
+        objetivo: typeof objetivoActual !== "undefined" ? objetivoActual : null,
+        turnstileToken: window.MedusaSeguridad?.tokenTurnstileActual() || undefined
+      })
     }, texto => { msgBot.querySelector(".msg-texto").textContent = texto; });
 
     let data = null;

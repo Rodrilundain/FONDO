@@ -22,6 +22,20 @@ AI_MAX_INPUT_CHARACTERS = "50000"
 CHUNK_SIZE = "6000"
 CHUNK_OVERLAP = "400"
 MAX_DOCUMENT_CHARACTERS = "400000"
+# Limite del RESPALDO en memoria (src/security.js), usado cuando no hay
+# binding de Rate Limiting disponible (por ejemplo en "wrangler dev"
+# local) o si el binding falla. El limite "de verdad" (el binding
+# [[ratelimits]] de mas abajo) NO se configura por variable de entorno --
+# Cloudflare lo fija en este archivo, en [ratelimits.simple].
+AI_RATE_LIMIT_POR_MINUTO = "20"
+# Turnstile es opcional (Etapa 2 de la auditoria): protege /api/generate
+# contra scripts automatizados sin exigir que el usuario se loguee. Con
+# TURNSTILE_ENABLED="false" (default), el Worker funciona exactamente
+# igual que antes, sin pedir ningun token. Para activarlo hace falta
+# ademas TURNSTILE_SECRET_KEY como secreto (nunca en este archivo --
+# "npx wrangler secret put TURNSTILE_SECRET_KEY"), y que el frontend
+# mande el token resuelto en payload.turnstileToken (ver js/config.js).
+TURNSTILE_ENABLED = "false"
 # GEMINI_MODEL y OPENROUTER_MODEL tambien pueden ir aca (no son secretos,
 # son solo el nombre del modelo) -- se dejan comentados porque conviene
 # que los confirmes vos mismo contra la documentacion oficial antes de
@@ -31,3 +45,19 @@ MAX_DOCUMENT_CHARACTERS = "400000"
 # deshabilitado con un aviso claro, a proposito.
 # GEMINI_MODEL = "gemini-2.5-flash-lite"
 # OPENROUTER_MODEL = ""
+
+# Rate Limiting nativo de Cloudflare (limite global de verdad, no solo por
+# isolate). namespace_id es un numero que vos elegis (no lo genera
+# Cloudflare, no es secreto) -- unico requisito: que no lo repitas para
+# otro binding distinto en la misma cuenta si no queres que compartan
+# contador. period debe ser 10 o 60 (documentacion oficial de Cloudflare
+# Workers, "Rate Limiting" bajo Runtime APIs / Bindings). Si esta seccion
+# se elimina o el binding no esta disponible (por ejemplo en tests o en
+# "wrangler dev" sin soporte), el Worker cae solo al respaldo en memoria
+# de arriba -- ver src/security.js:verificarLimite.
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "1001"
+[ratelimits.simple]
+limit = 20
+period = 60

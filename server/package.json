@@ -10,6 +10,9 @@
   "scripts": {
     "start": "node server.js",
     "test:voice": "node --test src/voice/__tests__/*.test.mjs",
+    "test:security": "node --test src/security/__tests__/*.test.mjs",
+    "test:server": "node --test __tests__/*.test.mjs",
+    "test": "npm run test:voice && npm run test:security && npm run test:server",
     "voice": "node test-voice.mjs"
   },
   "dependencies": {

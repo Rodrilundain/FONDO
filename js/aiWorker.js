@@ -127,15 +127,20 @@ if (iaFuncionesGenerarBtn) {
       const cuerpo = {
         task,
         content: documentoCargado,
-        options: question ? { question } : {}
+        options: question ? { question } : {},
+        turnstileToken: window.MedusaSeguridad?.tokenTurnstileActual() || undefined
       };
       if (task === "summary" && typeof documentoBloques !== "undefined" && documentoBloques.length) {
         cuerpo.bloques = documentoBloques;
       }
 
+      const idSesion = window.MedusaSeguridad?.idDeSesion();
       const res = await fetch(`${WORKER_URL}/api/generate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(idSesion ? { "X-Medusa-Session-Id": idSesion } : {})
+        },
         body: JSON.stringify(cuerpo),
         signal: controlador.signal
       });

@@ -273,6 +273,8 @@ npm start
 | `TTS_DAILY_LIMIT` | No | Límite de pedidos a `/tts` por día, para todo el backend (protege la cuota gratis de ElevenLabs). Por defecto `300`. |
 | `ALLOWED_ORIGIN` | No | Dominio propio adicional permitido por CORS, si servís el frontend desde otro lado además de GitHub Pages/localhost. |
 | `PORT` | No | Puerto local (por defecto 3000; Render lo define solo). |
+| `TURNSTILE_ENABLED` | No | Activa Cloudflare Turnstile en `/ask`, `/tts`, `/fetch-document` y `/voice/piper` (Etapa 2 de la auditoría de seguridad). Por defecto desactivado — el backend funciona igual que siempre sin esto. |
+| `TURNSTILE_SECRET_KEY` | No* | Clave secreta de Turnstile. Obligatoria si `TURNSTILE_ENABLED=true` (sin ella, esas rutas responden 500 en vez de dejar pasar pedidos sin verificar). |
 
 Ninguna clave se pega en el código ni en `render.yaml`: siempre se
 configuran como variable de entorno (en Render, en el formulario web del

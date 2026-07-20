@@ -7,6 +7,7 @@ import path from "node:path";
 import { access } from "node:fs/promises";
 import { textToSpeech, vozLocalHabilitada, rutaDirectorioAudioPiper } from "./src/voice/voiceService.js";
 import { descargarConProteccionSsrf, SsrfBlockedError } from "./src/security/ssrf.js";
+import { verificarTurnstile } from "./src/security/turnstile.js";
 dotenv.config();
 
 const app = express();
@@ -44,6 +45,32 @@ app.use(cors({
   }
 }));
 app.use(express.json({ limit: "1mb" }));
+
+// Turnstile (opcional, Etapa 2 de la auditoría): protege las rutas que
+// consumen servicios de IA/voz de scripts automatizados, más allá de
+// CORS (CORS no es autenticación: cualquier cliente que no sea un
+// navegador puede mandar el Origin que quiera). Con TURNSTILE_ENABLED
+// sin definir o en "false" (default), esta verificación queda
+// completamente desactivada y el backend funciona exactamente igual que
+// antes — pensado para desarrollo local o para quien no configuró
+// Turnstile todavía.
+const TURNSTILE_ENABLED = process.env.TURNSTILE_ENABLED === "true";
+const TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY || "";
+
+async function exigirTurnstile(req, res, next) {
+  if (!TURNSTILE_ENABLED) return next();
+  if (!TURNSTILE_SECRET_KEY) {
+    console.error("TURNSTILE_ENABLED=true pero falta TURNSTILE_SECRET_KEY: la verificación no puede funcionar así.");
+    return res.status(500).json({ error: "La verificación de seguridad no está bien configurada en el servidor." });
+  }
+  const token = req.body?.turnstileToken;
+  const resultado = await verificarTurnstile({ token, secretKey: TURNSTILE_SECRET_KEY, remoteIp: req.ip });
+  if (!resultado.success) {
+    return res.status(403).json({ error: "No se pudo verificar que sos una persona. Recargá la página e intentá de nuevo.", codigo: "turnstile_invalido" });
+  }
+  next();
+}
+app.use(["/ask", "/tts", "/fetch-document", "/voice/piper"], exigirTurnstile);
 
 // Rate limiting general para /ask (preguntas): máximo 20 pedidos por
 // minuto por IP, para evitar abuso y no quemar la cuota gratis de Groq.
@@ -486,7 +513,8 @@ app.get("/health", (_req, res) => {
     elevenlabsConfigurado: Boolean(process.env.ELEVENLABS_API_KEY),
     vozHombreConfigurada: Boolean(VOZ_HOMBRE),
     vozMujerConfigurada: Boolean(VOZ_MUJER),
-    vozLocalConfigurada: vozLocalHabilitada()
+    vozLocalConfigurada: vozLocalHabilitada(),
+    turnstileHabilitado: TURNSTILE_ENABLED
   });
 });
 
@@ -501,5 +529,14 @@ app.use((err, _req, res, next) => {
   next(err);
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🪼 Backend de MedusaLee en puerto ${PORT}`));
+// Solo arranca a escuchar cuando se ejecuta directamente ("node server.js" /
+// "npm start"), no cuando este archivo se importa (por ejemplo desde los
+// tests de integración, que arrancan su propia instancia en un puerto
+// efímero con app.listen(0)).
+const esEjecucionDirecta = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
+if (esEjecucionDirecta) {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => console.log(`🪼 Backend de MedusaLee en puerto ${PORT}`));
+}
+
+export default app;
