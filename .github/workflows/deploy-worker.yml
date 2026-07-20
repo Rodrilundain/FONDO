@@ -1,0 +1,36 @@
+# Despliega el Worker de IA (Cloudflare) cada vez que cambia algo en
+# worker/ y se pushea a main. Requiere el secreto CLOUDFLARE_API_TOKEN
+# (y opcionalmente CLOUDFLARE_ACCOUNT_ID) configurado en GitHub:
+# Settings -> Secrets and variables -> Actions. Ver worker/README.md,
+# seccion "Despliegue automatico con GitHub Actions" para como generarlos.
+#
+# Este workflow NO toca los secretos del propio Worker (GEMINI_API_KEY,
+# OPENROUTER_API_KEY): esos se configuran una sola vez con
+# "wrangler secret put" desde tu compu y quedan guardados del lado de
+# Cloudflare -- "wrangler deploy" no los borra ni los pisa.
+
+name: Deploy Worker de IA (Cloudflare)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "worker/**"
+      - ".github/workflows/deploy-worker.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-worker
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: worker

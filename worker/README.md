@@ -121,6 +121,41 @@ Wrangler te va a pedir loguearte con tu cuenta de Cloudflare la primera
 vez (`wrangler login`, abre el navegador). Al terminar te da la URL del
 Worker (algo como `https://medusalee-ai-worker.tu-cuenta.workers.dev`).
 
+## Despliegue automático con GitHub Actions
+
+`.github/workflows/deploy-worker.yml` despliega el Worker solo cuando
+pusheás a `main` y cambió algo dentro de `worker/` (usa
+[`cloudflare/wrangler-action`](https://github.com/cloudflare/wrangler-action),
+la acción oficial de Cloudflare). Necesita dos secretos configurados en
+GitHub — **nunca en el código**: `Settings` → `Secrets and variables` →
+`Actions` → `New repository secret`, en el repo.
+
+- **`CLOUDFLARE_API_TOKEN`**: Cloudflare dashboard → ícono de tu perfil →
+  `My Profile` → `API Tokens` → `Create Token` → plantilla **"Edit
+  Cloudflare Workers"** (le da permiso justo para desplegar Workers, nada
+  más). Copiá el token generado y pegalo como ese secreto en GitHub.
+- **`CLOUDFLARE_ACCOUNT_ID`**: Cloudflare dashboard → cualquier dominio o
+  la sección Workers & Pages → se ve en la barra lateral derecha
+  ("Account ID"). Pegalo como el otro secreto.
+
+Este workflow **no toca** `GEMINI_API_KEY` ni `OPENROUTER_API_KEY` — esos
+seguís configurándolos una sola vez con `wrangler secret put` desde tu
+compu (paso de arriba); quedan guardados del lado de Cloudflare y
+`wrangler deploy` no los borra ni los pisa en los despliegues siguientes.
+
+Sin esos dos secretos configurados en GitHub, el workflow va a fallar con
+un error de autenticación de Cloudflare — es esperable hasta que los
+cargues.
+
+**No verificado**: este workflow no se pudo probar de punta a punta
+desde este entorno de desarrollo (no hay una cuenta de Cloudflare real
+disponible acá, y `api.cloudflare.com` está bloqueado). Su sintaxis
+(`cloudflare/wrangler-action@v4`, el token con plantilla "Edit Cloudflare
+Workers") está verificada contra la documentación y el repositorio
+oficial de Cloudflare, pero la primera ejecución real la vas a ver vos en
+la pestaña "Actions" del repo después de cargar los secretos y pushear un
+cambio en `worker/`.
+
 ## Probar
 
 ```bash
