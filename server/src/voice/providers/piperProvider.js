@@ -153,6 +153,23 @@ export async function sintetizarConPiper(texto, piperConfig) {
   return rutaSalida;
 }
 
+const TEXTO_PRUEBA_SALUD = "Prueba.";
+
+// Corre una síntesis REAL, corta, para /health (Punto 7 de la auditoría
+// v2): a diferencia de verificarPiperDisponible() (que solo mira que el
+// ejecutable/modelo/config EXISTAN como archivos), esto confirma que
+// Piper de verdad puede ejecutarse y producir un .wav válido -- detecta,
+// por ejemplo, un ejecutable presente pero sin permiso de ejecución, un
+// modelo corrupto, o una versión de Piper incompatible con el modelo.
+// Se borra el archivo generado apenas se confirma (no hace falta
+// guardarlo, es solo una prueba). Lanza si falla -- quien llama decide
+// cómo cachear/traducir el resultado (ver voiceService.js).
+export async function probarPiperReal(piperConfig) {
+  const rutaSalida = await sintetizarConPiper(TEXTO_PRUEBA_SALUD, piperConfig);
+  await unlink(rutaSalida).catch(() => {});
+  return true;
+}
+
 // Borra archivos generados por este módulo (mismo prefijo) más viejos que
 // `maxEdadMinutos`, para que la carpeta de audio temporal no crezca sin
 // límite. Solo toca archivos con el prefijo propio, nunca la carpeta

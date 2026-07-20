@@ -28,6 +28,15 @@ function leerNumero(valor, porDefecto) {
   return Number.isFinite(n) && n > 0 ? n : porDefecto;
 }
 
+// A diferencia de leerNumero, acepta 0 como valor explícito válido (por
+// ejemplo, PIPER_HEALTH_CACHE_MS=0 significa "nunca cachear, probar Piper
+// de verdad en cada /health" -- un valor legítimo, no un error).
+function leerNumeroPermiteCero(valor, porDefecto) {
+  if (valor === undefined || valor === "") return porDefecto;
+  const n = Number(valor);
+  return Number.isFinite(n) && n >= 0 ? n : porDefecto;
+}
+
 // Se llama en cada uso (no se cachea a nivel de módulo) para que los tests
 // puedan cambiar process.env entre casos sin reiniciar el proceso.
 export function cargarVoiceConfig() {
@@ -62,5 +71,11 @@ export function cargarVoiceConfig() {
     // ahí se rechaza con un error claro en vez de acumularse sin límite.
     piperMaxConcurrencia: leerNumero(process.env.PIPER_MAX_CONCURRENCIA, 2),
     piperMaxEnCola: leerNumero(process.env.PIPER_MAX_EN_COLA, 5),
+    // Cuánto se cachea el resultado de una prueba REAL de síntesis con
+    // Piper para /health (Punto 7 de la auditoría v2): sin esto, cada
+    // pedido a /health correría Piper de verdad (un proceso del sistema
+    // aparte), lo cual es caro e innecesario si nada cambió hace 10
+    // segundos. 0 desactiva el cacheo (siempre prueba de nuevo).
+    piperHealthCacheMs: leerNumeroPermiteCero(process.env.PIPER_HEALTH_CACHE_MS, 5 * 60 * 1000),
   };
 }

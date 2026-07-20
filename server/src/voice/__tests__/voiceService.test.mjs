@@ -1,9 +1,35 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, writeFile, chmod, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { textToSpeech, estadoVozLocal, reiniciarLimitadorPiperParaTests } from "../voiceService.js";
+import { textToSpeech, estadoVozLocal, reiniciarLimitadorPiperParaTests, reiniciarCachePiperHealthParaTests } from "../voiceService.js";
+
+// Crea un ejecutable de Piper FALSO (un script de shell) que se puede
+// invocar de verdad con spawn(), sin depender de tener Piper instalado
+// en este entorno -- para probar prueba_fallida/disponible/el cacheo de
+// /health (Punto 7 de la auditoría v2) con una ejecución real, no
+// simulada. Cada invocación anota una línea en `contador` (el script
+// hereda las variables de entorno del proceso de Node que lo lanza).
+async function crearPiperFalso(dir, { exitoso }) {
+  const ejecutable = path.join(dir, "piper-falso.sh");
+  const modelo = path.join(dir, "modelo.onnx");
+  const config = path.join(modelo + ".json");
+  const contador = path.join(dir, "contador.txt");
+  await writeFile(modelo, "x");
+  await writeFile(config, "{}");
+  await writeFile(contador, "");
+  const script = exitoso
+    ? `#!/bin/sh\necho "x" >> "${contador}"\nprintf 'RIFF....WAVEfmt algo-de-contenido-de-mas-de-44-bytes-en-total' > "$6"\nexit 0\n`
+    : `#!/bin/sh\necho "x" >> "${contador}"\nexit 1\n`;
+  await writeFile(ejecutable, script);
+  await chmod(ejecutable, 0o755);
+  return { ejecutable, modelo, config, contador };
+}
+async function contarLineas(ruta) {
+  const contenido = await readFile(ruta, "utf-8");
+  return contenido.split("\n").filter(Boolean).length;
+}
 
 // El modulo lee process.env en cada llamada (cargarVoiceConfig no cachea),
 // asi que estos tests pueden cambiar variables de entorno entre casos sin
@@ -156,7 +182,7 @@ test("estadoVozLocal: TTS_ENABLED=true SOLO ya no alcanza para verse como dispon
   const r = await estadoVozLocal();
   assert.equal(r.habilitada, true, "el motor SÍ está habilitado por configuración");
   assert.equal(r.disponible, false, "pero NO está realmente disponible/operativo");
-  assert.notEqual(r.estado, "operativo");
+  assert.notEqual(r.estado, "disponible");
   limpiarEnv();
 });
 
@@ -181,6 +207,81 @@ test("estadoVozLocal: no expone rutas completas del servidor en la respuesta", a
   process.env.PIPER_EXECUTABLE = "/ruta/secreta/del/servidor/piper";
   const r = await estadoVozLocal();
   assert.equal(JSON.stringify(r).includes("/ruta/secreta"), false);
+  limpiarEnv();
+});
+
+test("estadoVozLocal: ejecutable/modelo presentes pero Piper falla al correr de verdad -> prueba_fallida (no solo mirar que los archivos existan)", async () => {
+  limpiarEnv();
+  reiniciarCachePiperHealthParaTests();
+  const dir = await mkdtemp(path.join(tmpdir(), "medusa-piper-fallido-"));
+  const { ejecutable, modelo } = await crearPiperFalso(dir, { exitoso: false });
+  process.env.TTS_ENABLED = "true";
+  process.env.TTS_ENGINE = "piper";
+  process.env.PIPER_EXECUTABLE = ejecutable;
+  process.env.PIPER_MODEL_PATH = modelo;
+  process.env.PIPER_OUTPUT_DIRECTORY = path.join(dir, "salida");
+  const r = await estadoVozLocal();
+  assert.equal(r.habilitada, true);
+  assert.equal(r.disponible, false);
+  assert.equal(r.estado, "prueba_fallida", "el ejecutable EXISTE, pero falla al correrlo de verdad -- eso es justamente lo que verificarPiperDisponible no puede detectar");
+  reiniciarCachePiperHealthParaTests();
+  limpiarEnv();
+});
+
+test("estadoVozLocal: Piper corre bien de verdad -> disponible", async () => {
+  limpiarEnv();
+  reiniciarCachePiperHealthParaTests();
+  const dir = await mkdtemp(path.join(tmpdir(), "medusa-piper-ok-"));
+  const { ejecutable, modelo } = await crearPiperFalso(dir, { exitoso: true });
+  process.env.TTS_ENABLED = "true";
+  process.env.TTS_ENGINE = "piper";
+  process.env.PIPER_EXECUTABLE = ejecutable;
+  process.env.PIPER_MODEL_PATH = modelo;
+  process.env.PIPER_OUTPUT_DIRECTORY = path.join(dir, "salida");
+  const r = await estadoVozLocal();
+  assert.deepEqual(r, { habilitada: true, disponible: true, estado: "disponible" });
+  reiniciarCachePiperHealthParaTests();
+  limpiarEnv();
+});
+
+test("estadoVozLocal: el resultado de la prueba real se cachea -- llamadas seguidas no vuelven a correr Piper", async () => {
+  limpiarEnv();
+  reiniciarCachePiperHealthParaTests();
+  const dir = await mkdtemp(path.join(tmpdir(), "medusa-piper-cache-"));
+  const { ejecutable, modelo, contador } = await crearPiperFalso(dir, { exitoso: true });
+  process.env.TTS_ENABLED = "true";
+  process.env.TTS_ENGINE = "piper";
+  process.env.PIPER_EXECUTABLE = ejecutable;
+  process.env.PIPER_MODEL_PATH = modelo;
+  process.env.PIPER_OUTPUT_DIRECTORY = path.join(dir, "salida");
+  process.env.PIPER_HEALTH_CACHE_MS = "60000";
+
+  await estadoVozLocal();
+  await estadoVozLocal();
+  await estadoVozLocal();
+
+  assert.equal(await contarLineas(contador), 1, "con el resultado cacheado, Piper debería haberse ejecutado una sola vez para las 3 llamadas a /health");
+  reiniciarCachePiperHealthParaTests();
+  limpiarEnv();
+});
+
+test("estadoVozLocal: PIPER_HEALTH_CACHE_MS=\"0\" desactiva el cacheo -- cada llamada vuelve a correr Piper de verdad", async () => {
+  limpiarEnv();
+  reiniciarCachePiperHealthParaTests();
+  const dir = await mkdtemp(path.join(tmpdir(), "medusa-piper-sin-cache-"));
+  const { ejecutable, modelo, contador } = await crearPiperFalso(dir, { exitoso: true });
+  process.env.TTS_ENABLED = "true";
+  process.env.TTS_ENGINE = "piper";
+  process.env.PIPER_EXECUTABLE = ejecutable;
+  process.env.PIPER_MODEL_PATH = modelo;
+  process.env.PIPER_OUTPUT_DIRECTORY = path.join(dir, "salida");
+  process.env.PIPER_HEALTH_CACHE_MS = "0";
+
+  await estadoVozLocal();
+  await estadoVozLocal();
+
+  assert.equal(await contarLineas(contador), 2);
+  reiniciarCachePiperHealthParaTests();
   limpiarEnv();
 });
 

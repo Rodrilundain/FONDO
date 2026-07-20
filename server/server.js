@@ -642,10 +642,14 @@ app.post("/voice/piper", async (req, res) => {
 
   const resultado = await textToSpeech({ text, voice });
   if (!resultado.success) {
-    // 404 si es simplemente que el motor no está habilitado/configurado
-    // (esperable, no un error del servidor); 502 para cualquier otra falla
-    // real de Piper (no instalado, modelo roto, etc).
-    const status = /desactivada|PIPER_EXECUTABLE|PIPER_MODEL_PATH/.test(resultado.error) ? 404 : 502;
+    // 429 si la cola de síntesis de Piper está llena (Punto 7 de la
+    // auditoría v2: un error temporal de capacidad, distinto de un fallo
+    // real); 404 si el motor simplemente no está habilitado/configurado
+    // (esperable, no un error del servidor); 502 para cualquier otra
+    // falla real de Piper (no instalado, modelo roto, etc).
+    const status = resultado.codigo === "cola_llena"
+      ? 429
+      : /desactivada|PIPER_EXECUTABLE|PIPER_MODEL_PATH/.test(resultado.error) ? 404 : 502;
     return res.status(status).json(resultado);
   }
 
