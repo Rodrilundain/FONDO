@@ -363,6 +363,19 @@ button { min-height: 44px; min-width: 44px; }
   font-size: 0.8em;
   cursor: pointer;
 }
+/* .btn-stop se usa también en el <a download> de "Descargar audio": los
+   <a> no reciben el mínimo de 44px que sí aplica el selector "button"
+   global, así que se repite acá para que también cumpla el tamaño
+   táctil mínimo. */
+a.btn-stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+  text-decoration: none;
+  box-sizing: border-box;
+}
 .btn-stop:hover {
   background: rgba(125,202,255,0.2);
 }
@@ -379,6 +392,139 @@ button { min-height: 44px; min-width: 44px; }
   color: #ffb4b4;
 }
 .btn-detener:hover { background: rgba(255,90,90,0.24); }
+/* "Continuar donde quedaste": se destaca un poco para diferenciarlo de
+   "Reproducir" (arranca de cero) sin ser tan llamativo como Detener. */
+.btn-continuar {
+  display: block;
+  width: 100%;
+  border-color: rgba(125,202,255,0.55);
+  background: rgba(125,202,255,0.18);
+  color: #eaf6ff;
+  font-weight: 600;
+}
+.btn-continuar:hover { background: rgba(125,202,255,0.3); }
+
+/* Panel "Ver documento": texto completo con el fragmento que se está
+   leyendo resaltado, más un índice si el documento tiene títulos (DOCX). */
+.documento-vista {
+  width: 100%;
+  max-height: 40vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: rgba(0,0,0,0.4);
+  border: 1px solid rgba(125,202,255,0.25);
+  border-radius: 10px;
+  padding: 10px;
+  text-align: left;
+  margin-top: 4px;
+}
+.documento-vista-toc {
+  border-bottom: 1px solid rgba(125,202,255,0.25);
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+}
+.documento-vista-toc-titulo {
+  font-size: 0.75em;
+  color: #9cdcff;
+  margin-bottom: 6px;
+}
+.documento-vista-toc-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.documento-vista-toc-lista button {
+  text-align: left;
+  font-size: 0.8em;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(125,202,255,0.25);
+  background: rgba(125,202,255,0.06);
+  color: #cde9ff;
+  cursor: pointer;
+  font-family: inherit;
+}
+.documento-vista-toc-lista button:hover { background: rgba(125,202,255,0.18); }
+.documento-vista-texto {
+  font-size: 0.82em;
+  line-height: 1.6;
+  color: #cde9ff;
+}
+.documento-vista-texto .frag {
+  padding: 1px 2px;
+  border-radius: 3px;
+}
+.documento-vista-texto .frag-actual {
+  background: rgba(125,202,255,0.35);
+  color: #041018;
+  font-weight: 600;
+}
+.documento-vista-texto .frag-truncado {
+  font-size: 0.85em;
+  color: #9cdcff;
+  opacity: 0.8;
+  font-style: italic;
+  margin-top: 6px;
+}
+
+/* Funciones de IA (Cloudflare Worker: Gemini/OpenRouter) */
+.ia-funciones-panel {
+  width: 100%;
+  background: rgba(125,202,255,0.08);
+  border: 1px solid rgba(125,202,255,0.3);
+  border-radius: 14px;
+  padding: 12px;
+  text-align: left;
+  margin-top: 4px;
+}
+.ia-funciones-titulo {
+  font-size: 0.92em;
+  font-weight: 600;
+  color: #eaf6ff;
+  margin-bottom: 8px;
+  text-align: center;
+}
+.ia-funciones-label {
+  display: block;
+  font-size: 0.78em;
+  color: #9cdcff;
+  margin-bottom: 4px;
+}
+.ia-funciones-panel select,
+.ia-funciones-panel input[type="text"] {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px;
+  border-radius: 8px;
+  border: none;
+  background: #0a1724;
+  color: #7dcaff;
+  font-size: 0.85em;
+  font-family: inherit;
+  outline: none;
+  margin-bottom: 8px;
+}
+.ia-funciones-resultado {
+  margin-top: 10px;
+  border-top: 1px solid rgba(125,202,255,0.25);
+  padding-top: 10px;
+}
+.ia-funciones-proveedor {
+  font-size: 0.72em;
+  color: #9cdcff;
+  opacity: 0.85;
+  margin-bottom: 6px;
+}
+.ia-funciones-texto {
+  font-size: 0.85em;
+  line-height: 1.5;
+  color: #cde9ff;
+  white-space: pre-wrap;
+  max-height: 40vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .menu-footer {
   display: flex;
   flex-wrap: wrap;

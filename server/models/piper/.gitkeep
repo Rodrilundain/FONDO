@@ -1,0 +1,11 @@
+Colocá acá los archivos del modelo de voz de Piper que descargues
+(por ejemplo, para es_AR-daniela-high):
+
+  es_AR-daniela-high.onnx
+  es_AR-daniela-high.onnx.json
+
+y apuntá PIPER_MODEL_PATH a la ruta completa del .onnx (server/.env).
+Ver server/src/voice/README.md para instrucciones completas de descarga,
+licencias y verificación. Estos archivos NO se commitean (ver .gitignore):
+son pesados y cada voz tiene su propia licencia, que hay que revisar antes
+de usarla.

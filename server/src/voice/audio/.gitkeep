@@ -1,0 +1,4 @@
+Los archivos .wav generados por Piper se guardan acá temporalmente
+(nombre único por pedido, con prefijo "medusa-piper-"). No se commitean
+(ver .gitignore) y se borran solos después de PIPER_TEMP_MAX_AGE_MINUTOS
+(60 minutos por defecto) en cada nueva síntesis.

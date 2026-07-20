@@ -76,6 +76,7 @@ async function verificarBackend() {
     backendConnStatus.textContent = res.ok
       ? "🟢 Backend: conectado"
       : `🔴 Backend: respondió con error (${res.status})`;
+    if (res.ok) document.dispatchEvent(new CustomEvent("medusa:backend-verificado"));
   } catch (_) {
     backendConnStatus.textContent = "🔴 Backend: no responde (puede estar dormido — probá igual, la primera pregunta lo despierta).";
   }
@@ -109,7 +110,8 @@ if (window.visualViewport && chatEl) {
 // localStorage) y recarga la página con los valores de fábrica.
 const CLAVES_PREFERENCIAS_VOZ = [
   "medusaVozActiva", "medusaVozModo", "medusaVozTipo", "medusaVozVelocidad", "medusaVozTono",
-  "medusaVozVolumenPersonalizada", "medusaVozPersonalizadaURI", "medusaVozIA", "medusaObjetivo"
+  "medusaVozVolumenPersonalizada", "medusaVozPersonalizadaURI", "medusaVozIA", "medusaObjetivo",
+  "medusaLecturaDocumentoIA"
 ];
 const CLAVES_PREFERENCIAS = [
   "medusaBackendUrl", "medusaColor", "medusaAutoColor", "medusaAnimActiva",

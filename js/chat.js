@@ -79,7 +79,7 @@ function actualizarMensajeBot(div, texto, fragmentosUsados) {
   if (fragmentosUsados && fragmentosUsados.length) {
     const refs = document.createElement("div");
     refs.className = "msg-fragmentos";
-    refs.textContent = "📎 " + fragmentosUsados.map(n => `Fragmento ${n}`).join(", ");
+    refs.textContent = "📎 " + fragmentosUsados.join(", ");
     div.appendChild(refs);
   }
 
@@ -161,24 +161,84 @@ function tokenizar(texto) {
     .filter(w => w.length > 2 && !STOPWORDS_ES.has(w));
 }
 
+// Fragmenta preservando la página de origen cuando el PDF la aportó
+// (documentoBloques con {pagina, texto}); si una página es más larga que
+// maxLen se subdivide, pero todas sus partes conservan el mismo número de
+// página, para poder citar "Página N" en vez de solo "Fragmento N".
+function fragmentarConPaginas(bloques, maxLen) {
+  const fragmentos = [];
+  for (const b of bloques) {
+    if (!b.texto) continue;
+    if (b.texto.length <= maxLen) {
+      fragmentos.push({ texto: b.texto, pagina: b.pagina });
+    } else {
+      for (const trozo of splitSentences(b.texto, maxLen)) {
+        fragmentos.push({ texto: trozo, pagina: b.pagina });
+      }
+    }
+  }
+  return fragmentos;
+}
+
 function fragmentarDocumento(texto, maxLen = 900) {
-  return splitSentences(texto, maxLen);
+  // documentoBloques con página (PDF) permite citar "Página N"; para DOCX
+  // (bloques con tipo, sin página) o texto plano, se cae al fragmentado
+  // simple por oraciones, sin referencia de página.
+  if (typeof documentoBloques !== "undefined" && documentoBloques.length && documentoBloques[0].pagina !== undefined) {
+    return fragmentarConPaginas(documentoBloques, maxLen);
+  }
+  return splitSentences(texto, maxLen).map(t => ({ texto: t }));
+}
+
+// BM25 (Okapi): a diferencia de una simple suma de coincidencias, pondera
+// más los términos raros en el documento (más informativos) que los que
+// aparecen en casi todos los fragmentos, y normaliza por longitud del
+// fragmento para no favorecer siempre a los más largos. Sin base
+// vectorial ni embeddings, como pide el diseño original: solo conteo de
+// palabras, pero con una fórmula más precisa que la anterior.
+function calcularBM25(tokensPorFragmento, terminosPregunta) {
+  const N = tokensPorFragmento.length;
+  const avgdl = N ? tokensPorFragmento.reduce((s, t) => s + t.length, 0) / N : 0;
+  const k1 = 1.5, b = 0.75;
+  const terminosUnicos = [...new Set(terminosPregunta)];
+  const df = {};
+  for (const t of terminosUnicos) {
+    df[t] = tokensPorFragmento.reduce((c, tokens) => c + (tokens.includes(t) ? 1 : 0), 0);
+  }
+  const idf = {};
+  for (const t of terminosUnicos) {
+    idf[t] = Math.log(1 + (N - df[t] + 0.5) / (df[t] + 0.5));
+  }
+  return tokensPorFragmento.map(tokens => {
+    const conteo = {};
+    for (const w of tokens) conteo[w] = (conteo[w] || 0) + 1;
+    let score = 0;
+    for (const t of terminosPregunta) {
+      const f = conteo[t] || 0;
+      if (!f) continue;
+      score += idf[t] * (f * (k1 + 1)) / (f + k1 * (1 - b + b * (tokens.length / (avgdl || 1))));
+    }
+    return score;
+  });
 }
 
 function elegirFragmentosRelevantes(fragmentos, pregunta, maxFragmentos = 6, maxCaracteres = 7000) {
   const terminosPregunta = tokenizar(pregunta);
   const vistos = new Set(); // fragmentos duplicados exactos (headers/pies repetidos): se descartan
-  const puntuados = fragmentos.map((frag, i) => {
-    const clave = frag.trim().toLowerCase();
-    if (vistos.has(clave)) return { i, frag, score: -1 };
+  const candidatos = [];
+  const tokensPorFragmento = [];
+  fragmentos.forEach((f, i) => {
+    const clave = f.texto.trim().toLowerCase();
+    if (vistos.has(clave)) return;
     vistos.add(clave);
-    if (!terminosPregunta.length) return { i, frag, score: 0 };
-    const conteo = {};
-    for (const w of tokenizar(frag)) conteo[w] = (conteo[w] || 0) + 1;
-    let score = 0;
-    for (const t of terminosPregunta) score += conteo[t] || 0;
-    return { i, frag, score };
-  }).filter(p => p.score >= 0);
+    candidatos.push({ i, frag: f.texto, pagina: f.pagina });
+    tokensPorFragmento.push(tokenizar(f.texto));
+  });
+
+  const scores = terminosPregunta.length
+    ? calcularBM25(tokensPorFragmento, terminosPregunta)
+    : candidatos.map(() => 0);
+  const puntuados = candidatos.map((c, idx) => ({ ...c, score: scores[idx] }));
 
   const conCoincidencias = puntuados.filter(p => p.score > 0).sort((a, b) => b.score - a.score);
   const topScored = (conCoincidencias.length ? conCoincidencias : puntuados).slice(0, maxFragmentos);
@@ -195,7 +255,8 @@ function elegirFragmentosRelevantes(fragmentos, pregunta, maxFragmentos = 6, max
 
   const elegidos = [...indicesElegidos]
     .sort((a, b) => a - b) // orden original: más fácil de seguir para el modelo
-    .map(i => ({ i, frag: fragmentos[i] }));
+    .filter(i => fragmentos[i])
+    .map(i => ({ i, frag: fragmentos[i].texto, pagina: fragmentos[i].pagina }));
 
   const seleccion = [];
   let total = 0;
@@ -216,8 +277,9 @@ function construirContextoParaPregunta(documento, pregunta) {
   }
   const fragmentos = fragmentarDocumento(documento);
   const elegidos = elegirFragmentosRelevantes(fragmentos, pregunta);
-  const contexto = elegidos.map(f => `[Fragmento ${f.i + 1}] ${f.frag}`).join("\n\n");
-  return { contexto, fragmentosUsados: elegidos.map(f => f.i + 1) };
+  const etiqueta = f => f.pagina ? `Página ${f.pagina}` : `Fragmento ${f.i + 1}`;
+  const contexto = elegidos.map(f => `[${etiqueta(f)}] ${f.frag}`).join("\n\n");
+  return { contexto, fragmentosUsados: elegidos.map(etiqueta) };
 }
 
 // === Reintento automático si Render está dormido ===

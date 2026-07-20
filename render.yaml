@@ -18,14 +18,48 @@ services:
       # texto y voz del navegador, sin la voz de IA.
       - key: ELEVENLABS_API_KEY
         sync: false
-      # Opcionales: voice_id de ElevenLabs (Voice Library) para que la voz
-      # de IA hable en español en vez del respaldo en inglés. Se pueden
+      # Voice_id de ElevenLabs (Voice Library) para que la voz de IA
+      # hable en español. Sin ninguna de las dos, /tts devuelve un error
+      # claro en vez de usar una voz en inglés en silencio. Se pueden
       # dejar vacías y completar después sin rehacer el deploy.
       - key: ELEVENLABS_VOICE_ID_HOMBRE
         sync: false
       - key: ELEVENLABS_VOICE_ID_MUJER
         sync: false
+      # Opcionales: ajustes de la voz de ElevenLabs y modelos por
+      # contexto. Ver la tabla de variables de entorno en README.md — los
+      # valores por defecto del backend (si se dejan vacías) son un punto
+      # de partida razonable, no un ajuste universal para cualquier voz.
+      - key: ELEVENLABS_MODEL_CHAT
+        sync: false
+      - key: ELEVENLABS_MODEL_DOCUMENT
+        sync: false
+      - key: ELEVENLABS_STABILITY
+        sync: false
+      - key: ELEVENLABS_SIMILARITY
+        sync: false
+      - key: ELEVENLABS_STYLE
+        sync: false
+      - key: ELEVENLABS_SPEED
+        sync: false
+      - key: ELEVENLABS_SPEAKER_BOOST
+        sync: false
+      # Opcionales: límites de /tts para proteger la cuota gratis de
+      # ElevenLabs. Ver README.md para los valores por defecto.
+      - key: TTS_RATE_LIMIT_PER_MIN
+        sync: false
+      - key: TTS_DAILY_LIMIT
+        sync: false
       # Opcional: solo si servís el frontend desde un dominio propio además
       # de GitHub Pages y localhost.
       - key: ALLOWED_ORIGIN
         sync: false
+      # NOTA sobre la voz local con Piper (TTS_ENABLED/PIPER_*, ver
+      # server/src/voice/README.md): a propósito NO se agrega acá como
+      # variable de Render. Este servicio usa runtime: node y
+      # buildCommand: npm install — no instala Python ni descarga ningún
+      # modelo de voz durante el deploy, así que activar TTS_ENABLED en
+      # este servicio tal como está configurado hoy no serviría de nada
+      # (Piper no estaría instalado). Piper es para correr MedusaLee
+      # localmente o en un servidor propio con Python disponible, no para
+      # este deploy gratuito en Render.

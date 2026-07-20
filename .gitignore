@@ -1,3 +1,9 @@
 node_modules/
 .env
 .DS_Store
+
+# Voz local (Piper): los modelos de voz (.onnx, pesados y con licencia
+# propia por voz) y el audio temporal generado no se commitean.
+server/models/piper/*.onnx
+server/models/piper/*.onnx.json
+server/src/voice/audio/*.wav

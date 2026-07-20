@@ -75,9 +75,11 @@
 
     <div>
       <label><input type="checkbox" id="vozIA" checked> 🧠 Voz IA (ElevenLabs) en las respuestas del chat</label>
-      <div class="status">Opcional: requiere el backend con ELEVENLABS_API_KEY configurada. Si falla o no está disponible, se avisa y se usa automáticamente la voz del navegador. La lectura del documento completo siempre usa la voz del navegador (gratis, sin límite de caracteres).</div>
+      <div class="status">Opcional: requiere el backend con ELEVENLABS_API_KEY y una voz en español configuradas. Si falla o no está disponible, se avisa y se usa automáticamente la voz del navegador. Nunca se usa en silencio una voz en inglés.</div>
+      <label><input type="checkbox" id="lecturaDocumentoIA"> 📖 Leer el documento completo con voz IA (opcional, consume cuota)</label>
+      <div class="status" id="vocesIADisponibles"></div>
       <div class="btn-row">
-        <button type="button" id="probarVozBtn" class="btn-stop">🔊 Probar voz IA (chat)</button>
+        <button type="button" id="probarVozBtn" class="btn-stop">🔊 Probar voz IA</button>
         <button type="button" id="leerFragmentoBtn" class="btn-stop">✂️ Leer fragmento con voz IA</button>
       </div>
       <div class="status" id="vozEstado" role="status" aria-live="polite"></div>
@@ -90,6 +92,12 @@
         <input type="text" id="backendUrlInput" placeholder="https://tu-backend.onrender.com">
         <div class="status" id="backendStatus"></div>
         <div class="status" id="backendConnStatus" role="status" aria-live="polite">⚪ Backend: sin verificar</div>
+      </div>
+      <div class="url-box">
+        <label for="workerUrlInput">🤖 Worker de IA (Cloudflare, opcional — Gemini/OpenRouter)</label>
+        <input type="text" id="workerUrlInput" placeholder="https://tu-worker.workers.dev">
+        <div class="status">Función adicional aparte del chat: resúmenes, preguntas de estudio, conceptos clave y más. Sin configurar esto, MedusaLee sigue funcionando exactamente igual.</div>
+        <div class="status" id="workerConnStatus" role="status" aria-live="polite">⚪ Worker de IA: no configurado</div>
       </div>
     </details>
 
@@ -141,6 +149,8 @@
     <div class="status" id="progresoLectura" role="status" aria-live="polite"></div>
     <div class="subtitulos" id="subtitulosVoz" role="status" aria-live="polite" hidden></div>
 
+    <button type="button" id="continuarLecturaBtn" class="btn-stop btn-continuar" hidden></button>
+
     <div class="btn-row" id="playbackControls" hidden>
       <button type="button" id="detenerVoz" class="btn-stop btn-detener" aria-label="Detener lectura inmediatamente">🔇 Detener</button>
       <button type="button" id="playBtn" class="btn-stop" aria-label="Reproducir lectura del documento">▶️ Reproducir</button>
@@ -148,6 +158,51 @@
       <button type="button" id="fragmentoAnteriorBtn" class="btn-stop" aria-label="Ir al fragmento anterior">⏮️ Anterior</button>
       <button type="button" id="fragmentoSiguienteBtn" class="btn-stop" aria-label="Ir al fragmento siguiente">⏭️ Siguiente</button>
       <button type="button" id="reiniciarVoz" class="btn-stop" aria-label="Reiniciar lectura desde el principio">↻ Reiniciar</button>
+      <button type="button" id="verDocumentoBtn" class="btn-stop" aria-label="Ver el documento con el texto actual resaltado" aria-expanded="false" aria-controls="documentoVistaPanel">📄 Ver documento</button>
+      <a href="#" id="descargarAudioBtn" class="btn-stop" download hidden aria-label="Descargar el audio de voz IA del fragmento actual">⬇️ Descargar audio</a>
+    </div>
+
+    <div class="documento-vista" id="documentoVistaPanel" hidden>
+      <div class="documento-vista-toc" id="documentoVistaToc" hidden>
+        <div class="documento-vista-toc-titulo">📑 Índice — tocá un título para leer solo esa sección</div>
+        <div class="documento-vista-toc-lista" id="documentoVistaTocLista"></div>
+      </div>
+      <div class="documento-vista-texto" id="documentoVistaTexto" role="region" aria-label="Texto del documento con el fragmento actual resaltado"></div>
+    </div>
+
+    <!-- Funciones de IA vía Cloudflare Worker (Gemini/OpenRouter): opcional,
+         aparte del chat de preguntas de siempre. Solo aparece si se
+         configuró la URL del Worker en el menú y hay un documento cargado. -->
+    <div class="ia-funciones-panel" id="iaFuncionesPanel" hidden>
+      <div class="ia-funciones-titulo">🧪 Funciones de IA (opcional)</div>
+      <label for="iaFuncionesTarea" class="ia-funciones-label">Elegí una función</label>
+      <select id="iaFuncionesTarea">
+        <option value="summary">📝 Resumir documento</option>
+        <option value="explain_simple">💡 Explicar en lenguaje sencillo</option>
+        <option value="qa">❓ Hacer una pregunta</option>
+        <option value="chat">💬 Conversar sobre el documento</option>
+        <option value="study_questions">📚 Preguntas de estudio</option>
+        <option value="multiple_choice">🔤 Preguntas de opción múltiple</option>
+        <option value="key_concepts">🔑 Conceptos importantes</option>
+        <option value="study_guide">🗂️ Guía de estudio</option>
+        <option value="extract_data">📅 Extraer fechas, nombres y datos</option>
+        <option value="section_explanation">📖 Explicación por secciones</option>
+      </select>
+      <div id="iaFuncionesPreguntaRow" hidden>
+        <input type="text" id="iaFuncionesPregunta" placeholder="Escribí tu pregunta..." aria-label="Tu pregunta para esta función">
+      </div>
+      <button type="button" id="iaFuncionesGenerarBtn" class="btn-stop">✨ Generar</button>
+      <div class="status" id="iaFuncionesEstado" role="status" aria-live="polite"></div>
+      <div class="ia-funciones-resultado" id="iaFuncionesResultado" hidden>
+        <div class="ia-funciones-proveedor" id="iaFuncionesProveedor"></div>
+        <div class="ia-funciones-texto" id="iaFuncionesTexto"></div>
+        <div class="btn-row">
+          <button type="button" id="iaFuncionesEscucharBtn" class="btn-stop" aria-label="Escuchar esta respuesta">🔊 Escuchar</button>
+          <button type="button" id="iaFuncionesPausarBtn" class="btn-stop" aria-label="Pausar o reanudar" aria-pressed="false">⏸️ Pausar</button>
+          <button type="button" id="iaFuncionesDetenerBtn" class="btn-stop btn-detener" aria-label="Detener inmediatamente">🔇 Detener</button>
+          <button type="button" id="iaFuncionesCopiarBtn" class="btn-stop">📋 Copiar</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -170,6 +225,7 @@
   <script src="js/voz.js"></script>
   <script src="js/documentos.js"></script>
   <script src="js/chat.js"></script>
+  <script src="js/aiWorker.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
