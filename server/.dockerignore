@@ -1,0 +1,9 @@
+node_modules
+.env
+.env.example
+src/voice/audio/*.wav
+models/piper/*.onnx
+models/piper/*.onnx.json
+__tests__
+test-voice.mjs
+*.log

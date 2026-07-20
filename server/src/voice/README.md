@@ -116,6 +116,60 @@ TTS_AUTOPLAY=false
 Con `TTS_ENABLED=false` (o sin definir), MedusaLee sigue respondiendo por
 texto normalmente y **nunca** ejecuta Piper ni genera archivos de audio.
 
+## Disponible para todos en Render (Docker), no solo en tu compu
+
+Todo lo de arriba (`.venv-piper`, `PIPER_EXECUTABLE`, etc.) es para correr
+Piper **localmente**: esa voz solo la escucha quien instaló Python y el
+modelo en su propia máquina. Para que la voz `es_AR` esté disponible para
+cualquiera que entre a la URL pública de MedusaLee, el backend se puede
+desplegar en Render como imagen Docker en vez del runtime "Node" nativo
+(que no trae Python).
+
+Esto ya está armado en el repo:
+
+- `server/Dockerfile`: imagen basada en `node:20-slim`, instala Python +
+  un entorno virtual propio para Piper (`pip install piper-tts` dentro de
+  ese venv, evitando el bloqueo PEP 668 de Debian), descarga la voz
+  `es_AR-daniela-high` durante el build y arranca el mismo `server.js` de
+  siempre.
+- `render.yaml`: el servicio `medusa-backend` pasó de `runtime: node` a
+  `runtime: docker` con `dockerfilePath: Dockerfile` y `dockerContext: .`
+  (relativos a `rootDir: server`), y `TTS_ENABLED=true` ya viene puesto
+  para este servicio (las demás variables `PIPER_*` quedan fijadas dentro
+  de la imagen, no hace falta repetirlas en Render).
+
+**Qué se verificó de esto y qué no** (importante, no se afirma que
+funciona sin haberlo probado):
+
+- ✅ Verificado: la sintaxis y los nombres de campo de `render.yaml`
+  (`runtime: docker`, `dockerfilePath`, `dockerContext`) contra la
+  documentación oficial de Render (Blueprint YAML Reference,
+  render.com/docs/blueprint-spec).
+- ✅ Verificado (en una sesión anterior, sin Docker): que
+  `python3 -m venv` + `pip install piper-tts` dentro de ese venv instala
+  un `piper` funcional y genera un `.wav` real.
+- ❌ **No verificado**: el `docker build` de `server/Dockerfile` de punta
+  a punta. El entorno donde se escribió este Dockerfile bloquea
+  `production.cloudfront.docker.com` (el registro de Docker Hub), así que
+  no se pudo descargar ni siquiera la imagen base `node:20-slim` para
+  probar el build acá.
+- ❌ **No verificado**: si el entorno de build de Render puede alcanzar
+  `huggingface.co` para descargar el modelo de voz. El paso está escrito
+  para no ser fatal (`|| echo "ADVERTENCIA..."`) — si falla, el build
+  igual termina y el resto de MedusaLee sigue funcionando, solo que sin
+  esa voz configurada. Hay que revisar el log de build en Render después
+  de desplegar para confirmar si la descarga funcionó.
+- ❌ **No verificado**: si cambiar el `runtime` de un servicio *ya
+  existente* en Render de `node` a `docker` mediante un nuevo Blueprint
+  Sync funciona de forma automática, o si Render pide recrear el
+  servicio a mano desde el dashboard. No hay forma de probar esto sin
+  acceso a la cuenta de Render.
+
+En resumen: el Dockerfile está escrito y revisado con cuidado, pero el
+primer build real va a pasar en Render, no acá. Si después de desplegar
+la voz `es_AR` no aparece disponible, el log de build de Render (paso de
+`RUN ... piper.download_voices`) es el primer lugar para mirar.
+
 ## Verificado vs. no verificado en esta sesión
 
 **Sí verificado, ejecutado de verdad en este entorno**: instalación de
