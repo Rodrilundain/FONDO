@@ -41,9 +41,73 @@ jobs:
           mkdir dist
           cp index.html dist/
           cp -r css dist/css
+          # cp -r + limpieza explícita (no rsync, para no depender de que
+          # esté instalado en el runner): js/ tiene carpetas __tests__ y
+          # archivos *.test.mjs (Punto 4 de la auditoría v2) que son
+          # código de pruebas, no algo que el navegador necesite --
+          # confirmado revisando el dist/ real que arma este paso, un
+          # "cp -r js dist/js" simple los copiaba igual.
           cp -r js dist/js
+          find dist/js -type d -name '__tests__' -exec rm -rf {} +
+          find dist/js -type f -name '*.test.mjs' -delete
+          # Opcionales: solo se copian si de verdad existen en el repo
+          # (Punto 9 de la auditoría v2 -- hoy este repo no tiene ninguno
+          # de estos, pero si se agregan más adelante quedan cubiertos
+          # sin tener que tocar este workflow).
+          [ -d assets ] && cp -r assets dist/assets || true
+          [ -f manifest.json ] && cp manifest.json dist/ || true
+          [ -f service-worker.js ] && cp service-worker.js dist/ || true
+          for f in favicon.ico favicon.png favicon.svg; do
+            [ -f "$f" ] && cp "$f" dist/ || true
+          done
           echo "Contenido final de dist/:"
           find dist -type f | sort
+      - name: Verificar que dist/ NO contenga nada que no deba publicarse
+        run: |
+          set -eu
+          # Lista blanca explícita (Punto 9 de la auditoría v2): si algo
+          # que no está acá termina en dist/ -- por ejemplo, un cambio
+          # futuro en el paso de arriba que copie de más --, el despliegue
+          # falla en vez de publicar el repositorio entero por accidente
+          # (esto ya pasó antes: "path: ." publicaba server/worker/tests).
+          PERMITIDOS="index.html css js assets manifest.json service-worker.js favicon.ico favicon.png favicon.svg"
+          fail=0
+          # find (no un glob de shell) para no pasar por alto archivos
+          # ocultos como .env si algún día terminaran copiados por error.
+          while IFS= read -r nombre; do
+            permitido=0
+            for p in $PERMITIDOS; do
+              [ "$nombre" = "$p" ] && permitido=1 && break
+            done
+            if [ "$permitido" -eq 0 ]; then
+              echo "::error::dist/$nombre no está en la lista blanca de lo que se puede publicar."
+              fail=1
+            fi
+          done < <(find dist -mindepth 1 -maxdepth 1 -printf '%f\n')
+          # Chequeo explícito de los directorios que NUNCA deben aparecer,
+          # con nombre y mensaje claro (más fácil de leer en el log que
+          # solo "no está en la lista blanca").
+          for prohibido in server worker .github docs tests .env Dockerfile node_modules; do
+            if [ -e "dist/$prohibido" ]; then
+              echo "::error::dist/$prohibido no debería existir -- se estaría publicando algo que no es parte del frontend."
+              fail=1
+            fi
+          done
+          # Chequeo en profundidad (no solo el nivel raíz de dist/): nada
+          # que sea código de pruebas debería colarse en ninguna
+          # subcarpeta (ej. js/security/__tests__).
+          encontrados=$(find dist \( -type d -name '__tests__' -o -type f -name '*.test.mjs' -o -type f -name '.env*' \) 2>/dev/null || true)
+          if [ -n "$encontrados" ]; then
+            echo "::error::Se encontró código de pruebas o un .env dentro de dist/:"
+            echo "$encontrados"
+            fail=1
+          fi
+          if [ "$fail" -eq 1 ]; then
+            echo "Contenido completo de dist/ (para diagnosticar):"
+            find dist | sort
+            exit 1
+          fi
+          echo "dist/ contiene solo lo esperado."
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
