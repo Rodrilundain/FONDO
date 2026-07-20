@@ -29,12 +29,18 @@ ronda, a definir con el usuario.
   correctamente `CLAVE_INVALIDA` sin romper nada -- confirma que la URL y
   el formato del pedido a Gemini son correctos de verdad, no solo en
   teoría. También se probó el límite de solicitudes (20/minuto): los
-  primeros 20 pedidos pasan, el 21° devuelve 429.
-- **33 tests automatizados** (`npm test`, Node.js `node:test`, sin
+  primeros 20 pedidos pasan, el 21° devuelve 429. Se probó también el
+  **caché de solicitudes idénticas** (Etapa 10): dos pedidos con el mismo
+  texto+tarea+opciones — el segundo se sirve desde caché sin volver a
+  llamar al proveedor (verificado tanto por unit tests de `cache.js` como
+  por una prueba de integración que llama a `worker.fetch()` directo con
+  `fetch` global mockeado, confirmando el log `generate_cache_hit`).
+- **44 tests automatizados** (`npm test`, Node.js `node:test`, sin
   dependencias nuevas) cubren validación, CORS, límite de solicitudes,
-  la lógica de proveedor principal/respaldo (incluyendo cuándo SÍ y
-  cuándo NO debe caer a OpenRouter), y la división de documentos largos
-  con consolidación de resúmenes.
+  caché, la lógica de proveedor principal/respaldo (incluyendo cuándo SÍ
+  y cuándo NO debe caer a OpenRouter), la división de documentos largos
+  con consolidación de resúmenes, y el `fetch()` completo del Worker
+  (`/health`, orígenes, Content-Type, rutas desconocidas).
 
 ## Qué NO se pudo verificar acá
 
@@ -98,6 +104,7 @@ claves de prueba.
 | `AI_MAX_INPUT_CHARACTERS` | Tamaño máximo de texto aceptado por pedido. | `50000` |
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | División de documentos largos para el resumen (Etapa 6). | `6000` / `400` |
 | `MAX_DOCUMENT_CHARACTERS` | Límite dursimo antes de ni siquiera intentar procesar. | `400000` |
+| *(`MAX_FILE_SIZE_MB`, no está acá)* | Este Worker nunca recibe archivos, solo texto ya extraído (JSON) — el límite de tamaño de archivo real vive en el frontend (`js/documentos.js`, `MAX_FILE_SIZE_MB = 20`) y en `server/server.js` (`MAX_FETCH_BYTES`) para las descargas por URL. Agregar esa variable acá no tendría ningún efecto real, así que no se hizo. | — |
 | `GEMINI_MODEL` | Ver advertencia arriba: confirmalo vos. Sin esto, se usa el default no verificado. | *(sin setear)* |
 | `OPENROUTER_MODEL` | Sin esto, el respaldo se informa como no configurado (a propósito, para no fijar un modelo gratis que podría haber dejado de existir). | *(sin setear, respaldo deshabilitado)* |
 
@@ -176,6 +183,13 @@ implementó acá porque no se pudo verificar su sintaxis exacta contra la
 documentación oficial (Cloudflare está bloqueado en este entorno de
 desarrollo). Si esto te importa en producción, es el primer lugar para
 mejorar.
+
+El caché de solicitudes idénticas (`src/cache.js`) tiene la misma
+limitación: vive en memoria por isolate (máximo 100 entradas, se
+descartan las más viejas), así que no es un caché global entre
+instancias/regiones de Cloudflare -- es un ahorro de costos best-effort
+para el caso común (el mismo usuario pidiendo lo mismo dos veces
+seguidas), no una garantía de deduplicación exacta.
 
 ## Seguridad de una clave que ya se expuso
 

@@ -11,6 +11,7 @@ import {
   origenPermitido, encabezadosCORS, listaOrigenesPermitidos,
   ipDelPedido, dentroDelLimite, limpiarContadoresViejos
 } from "./security.js";
+import { hashPedido, obtenerDeCache, guardarEnCache } from "./cache.js";
 
 const RATE_LIMIT_POR_MINUTO = 20;
 
@@ -62,12 +63,24 @@ async function manejarGenerate(request, env, corsHeaders) {
   }
 
   const origin = request.headers.get("Origin") || "";
+  const contenidoLimpio = payload.content.trim();
   const argumentosComunes = {
-    content: payload.content.trim(),
+    content: contenidoLimpio,
     options: optionsValidadas.options,
     config,
     allowedOrigin: origin
   };
+
+  // Solicitudes identicas (mismo texto + misma tarea + mismas opciones)
+  // no vuelven a llamar al proveedor de IA: se sirve la misma respuesta
+  // ya generada. Reduce costos ante clics repetidos o reintentos del
+  // usuario. Solo se cachean respuestas exitosas.
+  const hash = await hashPedido(payload.task, contenidoLimpio, optionsValidadas.options);
+  const enCache = obtenerDeCache(hash);
+  if (enCache) {
+    console.log(JSON.stringify({ evento: "generate_cache_hit", task: payload.task, largoEntrada: contenidoLimpio.length }));
+    return jsonResponse(enCache, 200, corsHeaders);
+  }
 
   try {
     const resultado = payload.task === "summary"
@@ -86,6 +99,7 @@ async function manejarGenerate(request, env, corsHeaders) {
       largoEntrada: payload.content.length
     }));
 
+    if (resultado.success) guardarEnCache(hash, resultado);
     return jsonResponse(resultado, resultado.success ? 200 : 502, corsHeaders);
   } catch (err) {
     console.error(JSON.stringify({ evento: "generate_error_inesperado", task: payload.task, mensaje: err?.message }));
