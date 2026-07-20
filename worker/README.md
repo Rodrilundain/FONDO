@@ -13,9 +13,10 @@ Usuario -> MedusaLee (GitHub Pages) -> este Worker -> Gemini (principal)
 **Es un backend nuevo, en paralelo al de Render/Groq que ya funciona.**
 No reemplaza nada: `/ask` en `server/server.js` sigue funcionando igual
 que siempre. Este Worker es una opción adicional (10 tareas de IA
-distintas, ver abajo), no todavía conectada a la interfaz de MedusaLee --
-esa conexión (Etapa 8 del pedido original) queda para una siguiente
-ronda, a definir con el usuario.
+distintas, ver abajo), conectada a la interfaz de MedusaLee a través del
+panel "Funciones de IA" (`js/aiWorker.js`) — oculto hasta que se
+configure una URL de Worker en "⚙️ Configuración avanzada" y haya un
+documento cargado.
 
 ## Qué se verificó de verdad en este entorno de desarrollo
 

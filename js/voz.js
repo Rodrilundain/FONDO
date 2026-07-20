@@ -3,6 +3,18 @@
 // objetivo, síntesis del navegador (gratis), voz de IA opcional vía
 // backend (ElevenLabs), lectura fragmento por fragmento con progreso, y
 // los controles de reproducción del documento cargado.
+//
+// Dependencia implícita de orden de carga (Etapa 6 de la auditoría de
+// seguridad, documentada a propósito en vez de eliminada — ver también
+// documentos.js): este archivo usa `documentoCargado`/`documentoBloques`
+// (declaradas en documentos.js, que carga DESPUÉS de este script en
+// index.html) y `BACKEND_URL`/`toggleMenu` (declaradas en app.js, que
+// carga al final). Es seguro porque acá solo se referencian dentro de
+// funciones que se ejecutan en respuesta a una interacción del usuario
+// (reproducir, pausar, etc.) — nunca durante el parseo inicial de este
+// archivo — así que para cuando corren, los demás scripts ya terminaron
+// de declarar todo. Si se reordenan los <script> en index.html, hay que
+// mantener este archivo antes de documentos.js y app.js, o esto rompe.
 
 const vozActivaToggle = document.getElementById("vozActiva");
 const vozModoSelect = document.getElementById("vozModo");
