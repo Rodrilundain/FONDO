@@ -1,0 +1,28 @@
+# Dependabot (Etapa 4 de la auditoría de seguridad): abre Pull Requests
+# automáticos cuando hay actualizaciones de dependencias npm o de las
+# GitHub Actions usadas en los workflows. No aplica nada solo -- cada
+# actualización llega como PR normal, pasa por el mismo CI (tests.yml)
+# antes de poder mergearse.
+
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /server
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "deps(server)"
+
+  - package-ecosystem: npm
+    directory: /worker
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "deps(worker)"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "deps(actions)"

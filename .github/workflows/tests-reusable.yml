@@ -1,0 +1,50 @@
+# Workflow reusable (workflow_call) que corre TODOS los tests automatizados
+# del proyecto: el backend Express (server/) y el Worker de Cloudflare
+# (worker/). Lo llaman ci.yml (en cada PR y push a main) y los dos
+# workflows de despliegue (deploy-pages.yml, deploy-worker.yml), que
+# dependen de este job con "needs:" para nunca desplegar una versión con
+# tests fallando.
+#
+# El pedido original de la auditoría pedía como mínimo:
+#   cd server && npm ci && npm run test:voice
+#   cd worker && npm ci && npm test
+# Acá se corre "npm test" completo en server/ (que incluye test:voice,
+# más los tests nuevos de seguridad SSRF, Turnstile, timeouts/reintentos
+# e integración Express real agregados en esta auditoría) en vez de solo
+# test:voice, porque es un superconjunto estricto -- no contradice el
+# pedido, lo amplía.
+
+name: Tests
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            worker/package-lock.json
+
+      - name: Backend (server/) - instalar dependencias
+        working-directory: server
+        run: npm ci
+      - name: Backend (server/) - correr tests
+        working-directory: server
+        run: npm test
+
+      - name: Worker (worker/) - instalar dependencias
+        working-directory: worker
+        run: npm ci
+      - name: Worker (worker/) - correr tests
+        working-directory: worker
+        run: npm test

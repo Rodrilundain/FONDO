@@ -1,0 +1,18 @@
+# CI: corre los tests de server/ y worker/ en cada Pull Request y en cada
+# push a main (Etapa 4 de la auditoría de seguridad). No despliega nada
+# por sí solo -- ver deploy-pages.yml y deploy-worker.yml, que llaman al
+# mismo workflow reusable (tests-reusable.yml) y solo despliegan si pasa.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/tests-reusable.yml

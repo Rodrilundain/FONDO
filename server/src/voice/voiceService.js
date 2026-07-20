@@ -12,11 +12,39 @@
 
 import { cargarVoiceConfig } from "./voiceConfig.js";
 import { validarTexto, limpiarTextoParaSintesis, dividirEnBloques } from "./textSanitizer.js";
-import { sintetizarConPiper, limpiarArchivosViejos, reproducirAudioLocal } from "./providers/piperProvider.js";
+import {
+  sintetizarConPiper, limpiarArchivosViejos, reproducirAudioLocal,
+  verificarPiperDisponible, carpetaAudioEsEscribible
+} from "./providers/piperProvider.js";
 import { crearProviderNoImplementado } from "./providers/providerStub.js";
+import { crearLimitadorConcurrencia } from "./concurrencyLimiter.js";
+
+// Cada síntesis de Piper es un proceso del sistema operativo aparte: sin
+// límite, varias solicitudes simultáneas podrían saturar el contenedor
+// (Etapa 4 de la auditoría de seguridad). El limitador se crea una sola
+// vez (tamaño fijado por PIPER_MAX_CONCURRENCIA/PIPER_MAX_EN_COLA al
+// primer uso) y se reutiliza para todas las solicitudes siguientes.
+let limitadorPiper = null;
+function obtenerLimitadorPiper(config) {
+  if (!limitadorPiper) {
+    limitadorPiper = crearLimitadorConcurrencia({
+      maxConcurrentes: config.piperMaxConcurrencia,
+      maxEnCola: config.piperMaxEnCola,
+    });
+  }
+  return limitadorPiper;
+}
+// Solo para tests: permite que un test cambie PIPER_MAX_CONCURRENCIA y
+// vuelva a crear el limitador con el nuevo tamaño.
+export function reiniciarLimitadorPiperParaTests() {
+  limitadorPiper = null;
+}
 
 const PROVIDERS = {
-  piper: { synthesize: (texto, config) => sintetizarConPiper(texto, config.piper) },
+  piper: {
+    synthesize: (texto, config) =>
+      obtenerLimitadorPiper(config)(() => sintetizarConPiper(texto, config.piper)),
+  },
   openvoice: crearProviderNoImplementado("OpenVoice"),
   melotts: crearProviderNoImplementado("MeloTTS"),
 };
@@ -84,6 +112,39 @@ export async function textToSpeech({ text, voice, autoplay } = {}) {
 // tener que leer variables de entorno por su cuenta.
 export function vozLocalHabilitada() {
   return cargarVoiceConfig().ttsEnabled;
+}
+
+// Estado real de la voz local para /health (Etapa 3 de la auditoría de
+// seguridad): separa "está habilitada por configuración" de "está
+// realmente operativa" -- antes, TTS_ENABLED=true por sí solo hacía que
+// /health mostrara la voz como disponible aunque el modelo nunca se
+// hubiera descargado. `estado` es un código estable para diagnosticar sin
+// exponer rutas completas del servidor (esas rutas solo quedan en
+// `errores`, pensado para logs internos, no para la respuesta HTTP).
+export async function estadoVozLocal() {
+  const config = cargarVoiceConfig();
+  if (!config.ttsEnabled) {
+    return { habilitada: false, disponible: false, estado: "deshabilitado" };
+  }
+  if (config.ttsEngine !== "piper") {
+    // openvoice/melotts son placeholders sin implementar todavía.
+    return { habilitada: true, disponible: false, estado: "motor_no_implementado" };
+  }
+
+  const { disponible, errores } = await verificarPiperDisponible(config.piper);
+  if (!disponible) {
+    let estado = "no_disponible";
+    if (errores.some(e => /PIPER_EXECUTABLE|el ejecutable de Piper/.test(e))) estado = "ejecutable_no_encontrado";
+    else if (errores.some(e => /PIPER_MODEL_PATH|el modelo de voz/.test(e))) estado = "modelo_no_encontrado";
+    else if (errores.some(e => /configuración de la voz/.test(e))) estado = "config_no_encontrada";
+    return { habilitada: true, disponible: false, estado };
+  }
+
+  if (!(await carpetaAudioEsEscribible(config.piper.outputDirectory))) {
+    return { habilitada: true, disponible: false, estado: "carpeta_audio_no_escribible" };
+  }
+
+  return { habilitada: true, disponible: true, estado: "operativo" };
 }
 
 // Para que server.js pueda servir el .wav generado sin duplicar la lógica

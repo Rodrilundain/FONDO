@@ -98,37 +98,63 @@ que dice — pensada como ayuda para estudiar.
 
 ## Arquitectura
 
-Sitio estático sin build, publicado con GitHub Pages en cada push a
-`main` (ver `.github/workflows/deploy-pages.yml`), más un backend chico en
-Node/Express para las preguntas y la voz de IA, desplegado en Render.
+Frontend estático (HTML/CSS/JS sin bundler ni framework), publicado con
+GitHub Pages en cada push a `main`. El workflow de despliegue arma una
+carpeta `dist/` con solo `index.html`, `css/` y `js/` antes de publicar
+(no el repositorio completo) y solo lo hace si los tests de `server/` y
+`worker/` pasan primero — ver `.github/workflows/deploy-pages.yml`. Más
+un backend chico en Node/Express para las preguntas y la voz de IA,
+desplegado en Render como imagen Docker (`server/Dockerfile`, para poder
+correr Piper — ver "Voz local con Piper" más abajo).
 
 ```
-index.html         Estructura de la página
-css/style.css       Estilos
-js/animacion.js     Canvas: la medusa animada, color manual/automático
-js/voz.js           Voz del navegador + voz de IA (ElevenLabs), reproducción
-js/documentos.js    Carga, validación y extracción de texto de documentos
-js/chat.js          Preguntas al backend, RAG simple, UI del chat
-js/aiWorker.js      Funciones de IA adicionales vía el Worker de
-                    Cloudflare (opcional, ver worker/)
-js/app.js           Menú, configuración del backend, arranque general
-server/server.js    Backend Express: /ask (Groq), /tts y /tts/voices
-                    (ElevenLabs), /fetch-document (proxy de URLs),
-                    /voice/piper (voz local, ver abajo), /health
-server/src/voice/   Módulo de voz local con Piper (motor gratis, sin
-                    cuota, corre en el propio servidor) — ver su README
-server/models/piper/ Dónde poner el modelo de voz de Piper descargado
-render.yaml         Blueprint de despliegue en Render
-worker/             Cloudflare Worker opcional: backend de IA con Gemini
-                    (principal) y OpenRouter (respaldo) — en paralelo al
-                    backend de Render, no lo reemplaza. Ver worker/README.md
+index.html          Estructura de la página
+css/style.css        Estilos
+js/seguridad.js      Turnstile (opcional) + ID de sesión para el rate
+                      limit del Worker -- se carga primero, ver abajo
+js/animacion.js      Canvas: la medusa animada, color manual/automático
+js/voz.js            Voz del navegador + voz de IA (ElevenLabs), reproducción
+js/documentos.js     Carga, validación y extracción de texto de documentos,
+                      privacidad de los proxies públicos de respaldo
+js/chat.js           Preguntas al backend, RAG simple, UI del chat
+js/aiWorker.js       Funciones de IA adicionales vía el Worker de
+                      Cloudflare (opcional, ver worker/)
+js/app.js            Menú, configuración del backend/Turnstile/proxies,
+                      arranque general -- se carga último a propósito
+server/server.js     Backend Express: /ask (Groq), /tts y /tts/voices
+                      (ElevenLabs), /fetch-document (proxy de URLs con
+                      protección SSRF), /voice/piper (voz local, ver
+                      abajo), /health
+server/src/security/ SSRF (redirecciones manuales revalidadas), Turnstile
+server/src/net/       Timeouts + reintentos controlados (Groq/ElevenLabs)
+server/src/voice/     Módulo de voz local con Piper (motor gratis, sin
+                      cuota, corre en el propio servidor), límite de
+                      concurrencia -- ver su README
+server/Dockerfile     Imagen Docker del backend (Node + Python/Piper)
+server/models/piper/  Dónde queda el modelo de voz de Piper descargado
+render.yaml           Blueprint de despliegue en Render (runtime: docker)
+worker/                Cloudflare Worker opcional: backend de IA con Gemini
+                      (principal) y OpenRouter (respaldo), Turnstile y
+                      rate limiting con binding nativo de Cloudflare — en
+                      paralelo al backend de Render, no lo reemplaza. Ver
+                      worker/README.md
+.github/workflows/    CI (tests en cada PR/push) + despliegues de Pages y
+                      del Worker, ambos dependientes de que el CI pase
+.github/dependabot.yml Actualizaciones automáticas de npm y GitHub Actions
 ```
 
 Los módulos JS son scripts clásicos (no ES modules) que comparten el mismo
 scope global del navegador — sin bundler ni framework, a propósito, para
-mantener el proyecto simple. El Worker de `worker/` es un proyecto Node
-aparte (con su propio `package.json`), pensado para desplegarse en
-Cloudflare, no en Render ni en GitHub Pages.
+mantener el proyecto simple. El orden de los `<script>` en `index.html`
+importa: algunos archivos usan variables declaradas en otros que cargan
+después (por ejemplo `voz.js`/`chat.js` usan `BACKEND_URL`, declarada en
+`app.js`, que carga al final) — es seguro porque esas referencias solo
+ocurren dentro de funciones que se ejecutan por una interacción del
+usuario, nunca durante el parseo inicial, pero está documentado con
+comentarios en los archivos donde pasa en vez de dejarlo implícito. El
+Worker de `worker/` es un proyecto Node aparte (con su propio
+`package.json`), pensado para desplegarse en Cloudflare, no en Render ni
+en GitHub Pages.
 
 ## Tecnologías utilizadas
 
@@ -196,10 +222,18 @@ python -m piper.download_voices es_AR-daniela-high \
 node server/test-voice.mjs "Hola, Rodrigo."               # prueba solo la voz
 ```
 
-**Nota sobre Render**: el deploy gratuito actual (`runtime: node`) no
-instala Python ni descarga modelos de voz — Piper es para correr
-MedusaLee localmente o en un servidor propio con Python disponible, no
-para este backend desplegado en Render tal como está configurado hoy.
+**Nota sobre Render**: `render.yaml` usa `runtime: docker` (no
+`runtime: node`), con `server/Dockerfile` como definición del build —
+ese Dockerfile instala Python en un entorno virtual propio y descarga la
+voz `es_AR-daniela-high` durante el build, con `TTS_ENABLED=true` ya
+puesto para ese servicio. Piper puede funcionar tanto localmente como en
+este backend desplegado en Render, siempre que el build de Render pueda
+completar la descarga del modelo (no se pudo verificar en vivo desde
+este entorno de desarrollo — ver "Verificado vs. no verificado" en
+`server/src/voice/README.md` y la sección de Docker más abajo). Si el
+paso de descarga falla durante el build, Piper queda sin voz configurada
+mientras que el resto de MedusaLee sigue funcionando igual — revisá el
+log de build de Render para confirmarlo.
 
 ## Modos de voz
 
@@ -273,6 +307,11 @@ npm start
 | `TTS_DAILY_LIMIT` | No | Límite de pedidos a `/tts` por día, para todo el backend (protege la cuota gratis de ElevenLabs). Por defecto `300`. |
 | `ALLOWED_ORIGIN` | No | Dominio propio adicional permitido por CORS, si servís el frontend desde otro lado además de GitHub Pages/localhost. |
 | `PORT` | No | Puerto local (por defecto 3000; Render lo define solo). |
+| `TURNSTILE_ENABLED` | No | Activa Cloudflare Turnstile en `/ask`, `/tts`, `/fetch-document` y `/voice/piper` (Etapa 2 de la auditoría de seguridad). Por defecto desactivado — el backend funciona igual que siempre sin esto. |
+| `TURNSTILE_SECRET_KEY` | No* | Clave secreta de Turnstile. Obligatoria si `TURNSTILE_ENABLED=true` (sin ella, esas rutas responden 500 en vez de dejar pasar pedidos sin verificar). |
+| `GROQ_TIMEOUT_MS` / `GROQ_MAX_RETRIES` | No | Timeout por pedido a Groq y cantidad de reintentos ante errores recuperables (timeout, caída de conexión, 429/500/502/503/504 — nunca 400 ni clave inválida). Por defecto `20000` / `2`. |
+| `ELEVENLABS_TIMEOUT_MS` / `ELEVENLABS_MAX_RETRIES` | No | Igual que arriba, para ElevenLabs. Por defecto `20000` / `2`. |
+| `PIPER_MAX_CONCURRENCIA` / `PIPER_MAX_EN_COLA` | No | Cuántas síntesis de Piper corren en paralelo (cada una es un proceso del sistema aparte) y cuántas más pueden esperar en cola antes de rechazar con un error claro. Por defecto `2` / `5`. |
 
 Ninguna clave se pega en el código ni en `render.yaml`: siempre se
 configuran como variable de entorno (en Render, en el formulario web del
@@ -339,12 +378,32 @@ El plan gratis de Render duerme el servicio tras un rato sin uso: la
 primera pregunta después de eso puede tardar hasta un minuto en
 responder. La app avisa esto y reintenta sola.
 
+**El servicio usa `runtime: docker`** (`render.yaml` + `server/Dockerfile`),
+no el runtime "Node" nativo -- así es como Piper (voz local `es_AR`)
+puede quedar disponible para cualquiera que entre a la app, no solo en
+una instalación local. Ver "Voz local con Piper" más arriba para el
+detalle de qué se pudo verificar de esto y qué no. Turnstile
+(`TURNSTILE_ENABLED`/`TURNSTILE_SECRET_KEY`) es opcional y queda
+desactivado si no lo configurás.
+
+**Importante**: el despliegue en Render lo dispara Render mismo (su
+propia integración con GitHub, mirando pushes a `main`), **no** depende
+de que pase el CI de GitHub Actions -- son dos sistemas separados. Si
+necesitás que Render espere a que el CI esté en verde, hoy no hay ningún
+mecanismo automático para eso; es un riesgo a tener en cuenta (ver
+"Riesgos que todavía permanecen" más abajo si existe esa sección en la
+entrega, o preguntá si querés que se agregue un gate explícito).
+
 ## Despliegue en GitHub Pages (frontend)
 
 Automático: cada push a `main` dispara
-`.github/workflows/deploy-pages.yml`, que publica el contenido del
-repositorio tal cual (sin build) en GitHub Pages. No hace falta
-configuración adicional más allá de tener Pages habilitado en el
+`.github/workflows/deploy-pages.yml`. Ese workflow **primero corre los
+tests** de `server/` y `worker/` (`needs: test`, vía el workflow reusable
+`tests-reusable.yml`) y solo si pasan arma una carpeta `dist/` con
+únicamente `index.html`, `css/` y `js/` -- **no** el repositorio
+completo. `server/`, `worker/`, tests, el Dockerfile y la documentación
+interna nunca se publican en la URL pública de GitHub Pages. No hace
+falta configuración adicional más allá de tener Pages habilitado en el
 repositorio, apuntando a "GitHub Actions" como origen.
 
 ## Limitaciones conocidas
@@ -371,14 +430,20 @@ repositorio, apuntando a "GitHub Actions" como origen.
   por defecto — la voz del navegador sigue siendo la de uso libre e
   ilimitado.
 - **Lectores de URL genéricas**: para páginas web (no PDF/DOCX/TXT
-  directos), o si la descarga por el backend propio (`/fetch-document`)
-  falla, se cae a proxies públicos de terceros (r.jina.ai, corsproxy.io,
-  allorigins.win) con reintento en cadena; no tienen SLA, así que
-  ocasionalmente pueden fallar o tardar.
+  directos), o si la descarga por el backend propio (`/fetch-document`) y
+  la descarga directa del navegador fallan, MedusaLee **pregunta antes**
+  de usar un proxy público de terceros (r.jina.ai, corsproxy.io,
+  allorigins.win) — nunca se usan en silencio (Etapa 5 de la auditoría de
+  seguridad). Se puede desactivar esto por completo en "⚙️ Configuración
+  avanzada"; sin ello, si el backend falla, la carga de ese enlace
+  simplemente falla con un aviso claro. Ninguno de los tres tiene SLA, así
+  que ocasionalmente pueden fallar o tardar incluso con permiso.
 - **Protección SSRF del backend no es completa**: `/fetch-document`
-  bloquea IPs privadas/locales resolviendo el DNS antes de descargar,
-  pero no "fija" esa IP para el pedido real — en teoría, un ataque de DNS
-  rebinding (el dominio cambia de IP entre la resolución y la descarga)
+  revalida protocolo, hostname y todas las IPs resueltas en cada
+  redirección (hasta un máximo de 3, Etapa 1 de la auditoría de
+  seguridad), pero no "fija" esa IP para el pedido real dentro de un
+  mismo salto — en teoría, un ataque de DNS rebinding (el dominio cambia
+  de IP entre la resolución y la descarga, dentro de la misma ventana)
   podría eludir el chequeo. Es una limitación conocida, no algo oculto.
 - **Voz local Piper — catálogo de voces no verificable desde este
   entorno de desarrollo**: el catálogo real de voces (`rhasspy/piper-voices`)
@@ -437,12 +502,21 @@ local). Exactamente esto sale del dispositivo, y a dónde:
 - **Si cargás un documento pegando una URL** (no un archivo local): la URL
   se manda al backend propio, que la descarga él mismo (`/fetch-document`)
   en vez del navegador — así el proveedor de la URL nunca ve la IP del
-  usuario, solo la del servidor. Ese endpoint valida que sea `http`/`https`,
-  bloquea IPs privadas/locales (protección contra SSRF) y limita el
-  tamaño descargado; no guarda el contenido descargado más allá de
-  procesar esa solicitud. Si el backend no puede resolver la URL (poco
-  común), se cae a proxies públicos de terceros como respaldo (ver
-  "Limitaciones conocidas").
+  usuario, solo la del servidor. Ese endpoint valida protocolo, hostname
+  y **todas** las IPs resueltas (incluyendo en cada redirección que siga,
+  hasta un máximo de 3), bloquea rangos privados/reservados/loopback
+  (IPv4 y IPv6, protección contra SSRF) y limita el tamaño descargado; no
+  guarda el contenido descargado más allá de procesar esa solicitud.
+  **Si el backend y la descarga directa del navegador fallan**, MedusaLee
+  pregunta explícitamente (nombrando los servicios: r.jina.ai,
+  corsproxy.io, allorigins.win) antes de mandarles la URL a alguno de
+  esos terceros — nunca se usan automáticamente ni en silencio, y hay una
+  opción en "⚙️ Configuración avanzada" para desactivarlos por completo
+  (ver "Limitaciones conocidas"). Tampoco se usan proxies si la URL
+  parece contener un token, firma o parámetro de sesión/expiración.
+  Un enlace recibido compartido en la propia URL de la página
+  (`?doc=`/`?url=`) tampoco se descarga solo: se pide confirmación
+  explícita, mostrando el enlace recibido, antes de cargar nada.
 - **Si usás alguna de las "Funciones de IA" del panel opcional** (resumen,
   preguntas de estudio, conceptos clave, etc.): el documento (o, para
   documentos muy largos, sus fragmentos) viaja al Cloudflare Worker
@@ -476,8 +550,18 @@ documento, que tampoco se guarda.
 
 ## Pruebas realizadas
 
-Sin framework de tests automatizados todavía (queda como mejora
-pendiente). Esta ronda se probó manualmente así:
+Dos tipos de pruebas conviven en este proyecto:
+
+- **Automatizadas** (`node --test`, sin dependencias de testing externas):
+  79 tests en `server/` (`npm test`: voz/Piper, seguridad SSRF+Turnstile,
+  timeouts/reintentos, e integración contra la app Express real) + 61 en
+  `worker/` (`npm test`) = **140 tests**, corridos en cada Pull Request y
+  push a `main` por `.github/workflows/ci.yml`. El detalle está en las
+  filas de auditoría de seguridad más abajo.
+- **Manuales**, con Playwright real contra el frontend (sin framework de
+  tests de UI automatizado en CI todavía — queda como mejora pendiente).
+  Esta sección documenta cómo se probó cada funcionalidad la primera vez
+  que se implementó:
 
 | Caso | Método | Resultado |
 |---|---|---|
@@ -540,6 +624,11 @@ pendiente). Esta ronda se probó manualmente así:
 | Worker de IA (Gemini/OpenRouter): 44 casos (validación, CORS, rate limit, caché, fallback, resumen de documentos largos, fetch handler completo) | `npm test` en `worker/` (node:test) + `wrangler dev --local` real, incluida una llamada real a la API de Gemini con clave inválida | Los 44 tests pasan; verificado en vivo que el Worker corre en el runtime real de Cloudflare (`workerd`), responde `/health`, aplica CORS solo al origen permitido, respeta el límite de 20 solicitudes/minuto (20 pasan, la 21ª da 429), y sirve la segunda solicitud idéntica desde caché sin volver a llamar al proveedor — detalle completo en `worker/README.md` |
 | Panel "Funciones de IA" en la interfaz: oculto sin Worker configurado, visible con Worker+documento, selector de pregunta según la tarea, generación exitosa, error amigable (sin códigos HTTP ni stack traces), doble clic no duplica la solicitud, escuchar/pausar/detener no rompen nada | Playwright contra el servidor local, con `/api/generate` mockeado (éxito y error) | Todos los casos correctos; verificado en particular que el texto generado se inserta con `textContent` y nunca se ejecuta como HTML (una respuesta con `<script>` inyectado no corre el script, confirmado revisando `window.__inyectado`) |
 | Regresión: motor de lectura IA, experiencia de lectura (página/tiempo restante/resaltado/continuar/TOC), backend de voz local | Se re-corrieron los tests de rondas anteriores tras agregar el panel de IA | Sin cambios de comportamiento — el panel nuevo no modifica ningún archivo de los que esas pruebas cubren salvo agregados aditivos |
+| Auditoría de seguridad, Etapa 1 (SSRF con redirecciones manuales revalidadas en cada salto, clave de Gemini por header) | `node --test` con `fetch`/DNS mockeados (15 + 2 tests nuevos) | SSRF bloquea redirecciones hacia IPs privadas/reservadas (IPv4, IPv6 loopback/link-local/ULA, IPv4 mapeada en IPv6) en cualquier salto, no solo la URL inicial; la clave de Gemini nunca aparece en la URL de la solicitud |
+| Auditoría de seguridad, Etapa 2 (Turnstile opcional, rate limiting con binding nativo de Cloudflare + respaldo en memoria) | `node --test` con `fetch`/binding mockeados (61 tests del Worker, 19 de seguridad del backend, 10 de integración Express real) + `wrangler deploy --dry-run` en vivo | Turnstile activo rechaza pedidos sin token válido antes de gastar una llamada a Gemini/OpenRouter o a Groq; el binding `RATE_LIMITER` se reconoce en vivo (`wrangler deploy --dry-run`); no probado contra una cuenta de Cloudflare real (no disponible en este entorno) |
+| Auditoría de seguridad, Etapa 3 (timeouts + reintentos controlados en Groq/ElevenLabs, orden del contador diario de ElevenLabs, estado real de la voz local en `/health`) | `node --test` (9 tests de `httpRetry.js` + 1 test específico de 3 casos para el bug del contador + 6 tests de `estadoVozLocal`) | Confirmado: un 400/401/403 nunca se reintenta; un 429/500/502/503/504 sí, hasta el máximo configurado; un hit de caché de `/tts` ya NO consume el límite diario (antes sí, era el bug); `/health` ahora distingue `vozLocalHabilitada` (por configuración) de `vozLocalDisponible`/`vozLocalEstado` (si el ejecutable/modelo/carpeta realmente están operativos), sin exponer rutas del servidor en la respuesta |
+| Auditoría de seguridad, Etapa 4 (CI de GitHub Actions, `/fetch-document` siguiendo una redirección real hasta un host público, límite de 20 pedidos/min en `/ask`, límite de concurrencia para Piper, endurecimiento de `server/Dockerfile`, GitHub Pages publicando solo `dist/`, Actions fijadas por SHA, Dependabot) | `node --test` (4 tests de `concurrencyLimiter.js` + 2 tests nuevos de integración Express real) + `npm ci`/`npm test` limpios en `server/` y `worker/` + digest de `node:20-slim` resuelto en vivo contra `registry-1.docker.io` | Confirmado: `/fetch-document` descarga el contenido final después de una redirección simulada a otro host, sin tocarlo hasta revalidar protocolo/hostname/IP; el pedido 21 a `/ask` en el mismo minuto da 429; el limitador de concurrencia nunca deja correr más de `PIPER_MAX_CONCURRENCIA` síntesis a la vez y rechaza con un error claro cuando la cola está llena; el digest de la imagen base es real (confirmado vía la API del registro de Docker Hub) |
+| Auditoría de seguridad, Etapa 5 (proxies públicos con confirmación explícita en vez de automáticos, enlaces `?doc=`/`?url=` ya no se cargan solos) | Playwright real contra un servidor local (`python3 -m http.server`), interceptando `window.confirm` y las solicitudes de red salientes | Confirmado: abrir la página con `?doc=<url>` muestra exactamente un `confirm()` con la URL recibida, y si se cancela NO se dispara ninguna descarga hacia esa URL; la casilla "no usar proxies" persiste en `localStorage` y se refleja al recargar; con un enlace con `?token=` en la query, `puedeUsarProxiesPublicos` no ofrece proxies (chequeado por lectura de código + el mismo mecanismo probado para la casilla, no con un caso Playwright dedicado para cada patrón sensible) |
 
 No se fabricó ningún resultado: donde no se pudo ejecutar la prueba real
 (PDF/DOCX real, voces de síntesis del navegador, calidad real de una voz
@@ -555,9 +644,12 @@ no están disponibles fuera del navegador.
 
 ## Próximas mejoras
 
-- Tests automatizados (hoy la matriz de arriba es manual).
-- Verificar en un iPhone/Safari y en Android reales — pendiente también
-  para esta ronda, ver "Pruebas realizadas".
+- Tests de UI/frontend automatizados dentro del pipeline de CI (hoy
+  Playwright se corre a mano, no como parte de `.github/workflows/ci.yml`
+  — los 140 tests que sí corren en CI son de `server/` y `worker/`, no
+  de la interfaz).
+- Verificar en un iPhone/Safari y en Android reales — sigue pendiente,
+  ver "Pruebas realizadas".
 - OCR opcional para PDF escaneados (hoy solo se detecta y avisa, no se
   extrae texto de la imagen).
 - Selector explícito de voz IA masculina/femenina independiente de los
@@ -567,11 +659,14 @@ no están disponibles fuera del navegador.
   solo si está configurada.
 - Resolver la limitación de DNS rebinding en `/fetch-document` fijando la
   IP resuelta para el pedido real (Node/undici no lo expone de forma
-  simple hoy).
-- Experiencia de lectura: resaltado del texto que se está leyendo dentro
-  del documento, "continuar donde quedaste" entre recargas de página,
-  tabla de contenidos cuando el documento tiene títulos, y descarga del
-  audio generado.
+  simple hoy) — la Etapa 1 de la auditoría de seguridad revalida
+  protocolo/hostname/IP en cada redirección, pero sigue existiendo la
+  ventana entre "se resolvió y validó el DNS" y "se hizo el pedido real"
+  dentro de un mismo salto.
+- Gate explícito para que el deploy de Render espere a que el CI de
+  GitHub Actions esté en verde (hoy son sistemas separados: Render
+  despliega mirando pushes a `main` directamente, sin depender del
+  resultado de `.github/workflows/ci.yml`).
 - Progressive Web App (ícono, instalable, funcionamiento básico offline).
 - El panel "¿Qué querés lograr?" puede quedar unos pocos píxeles superpuesto
   con el borde del chat en laptops de poca altura (~720px) mientras está

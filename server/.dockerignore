@@ -7,3 +7,7 @@ models/piper/*.onnx.json
 __tests__
 test-voice.mjs
 *.log
+.git
+*.md
+Dockerfile
+.dockerignore

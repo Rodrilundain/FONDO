@@ -3,10 +3,12 @@ import cors from "cors";
 import rateLimit from "express-rate-limit";
 import dotenv from "dotenv";
 import crypto from "node:crypto";
-import dns from "node:dns/promises";
 import path from "node:path";
 import { access } from "node:fs/promises";
-import { textToSpeech, vozLocalHabilitada, rutaDirectorioAudioPiper } from "./src/voice/voiceService.js";
+import { textToSpeech, estadoVozLocal, rutaDirectorioAudioPiper } from "./src/voice/voiceService.js";
+import { descargarConProteccionSsrf, SsrfBlockedError } from "./src/security/ssrf.js";
+import { verificarTurnstile } from "./src/security/turnstile.js";
+import { fetchConReintentos } from "./src/net/httpRetry.js";
 dotenv.config();
 
 const app = express();
@@ -44,6 +46,32 @@ app.use(cors({
   }
 }));
 app.use(express.json({ limit: "1mb" }));
+
+// Turnstile (opcional, Etapa 2 de la auditoría): protege las rutas que
+// consumen servicios de IA/voz de scripts automatizados, más allá de
+// CORS (CORS no es autenticación: cualquier cliente que no sea un
+// navegador puede mandar el Origin que quiera). Con TURNSTILE_ENABLED
+// sin definir o en "false" (default), esta verificación queda
+// completamente desactivada y el backend funciona exactamente igual que
+// antes — pensado para desarrollo local o para quien no configuró
+// Turnstile todavía.
+const TURNSTILE_ENABLED = process.env.TURNSTILE_ENABLED === "true";
+const TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY || "";
+
+async function exigirTurnstile(req, res, next) {
+  if (!TURNSTILE_ENABLED) return next();
+  if (!TURNSTILE_SECRET_KEY) {
+    console.error("TURNSTILE_ENABLED=true pero falta TURNSTILE_SECRET_KEY: la verificación no puede funcionar así.");
+    return res.status(500).json({ error: "La verificación de seguridad no está bien configurada en el servidor." });
+  }
+  const token = req.body?.turnstileToken;
+  const resultado = await verificarTurnstile({ token, secretKey: TURNSTILE_SECRET_KEY, remoteIp: req.ip });
+  if (!resultado.success) {
+    return res.status(403).json({ error: "No se pudo verificar que sos una persona. Recargá la página e intentá de nuevo.", codigo: "turnstile_invalido" });
+  }
+  next();
+}
+app.use(["/ask", "/tts", "/fetch-document", "/voice/piper"], exigirTurnstile);
 
 // Rate limiting general para /ask (preguntas): máximo 20 pedidos por
 // minuto por IP, para evitar abuso y no quemar la cuota gratis de Groq.
@@ -86,6 +114,15 @@ const MAX_QUESTION_LEN = 500;
 const MAX_CONTEXT_LEN = 12000;
 const MAX_TTS_LEN = 2000;
 
+// Timeout + reintentos (Etapa 3 de la auditoría de seguridad) para las
+// llamadas salientes a Groq y ElevenLabs -- ver src/net/httpRetry.js.
+// Configurables por si el plan gratuito de alguno de los dos proveedores
+// necesita márgenes distintos.
+const GROQ_TIMEOUT_MS = Number(process.env.GROQ_TIMEOUT_MS) || 20000;
+const GROQ_MAX_RETRIES = Number(process.env.GROQ_MAX_RETRIES) || 2;
+const ELEVENLABS_TIMEOUT_MS = Number(process.env.ELEVENLABS_TIMEOUT_MS) || 20000;
+const ELEVENLABS_MAX_RETRIES = Number(process.env.ELEVENLABS_MAX_RETRIES) || 2;
+
 function esTextoValido(valor, maxLen) {
   return typeof valor === "string" && valor.trim().length > 0 && valor.length <= maxLen;
 }
@@ -120,7 +157,7 @@ app.post("/ask", async (req, res) => {
   const objetivoTexto = typeof objetivo === "string" ? OBJETIVOS_VALIDOS[objetivo] : null;
 
   try {
-    const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    const groqRes = await fetchConReintentos("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -164,7 +201,7 @@ app.post("/ask", async (req, res) => {
         ],
         temperature: 0.3
       })
-    });
+    }, { timeoutMs: GROQ_TIMEOUT_MS, maxRetries: GROQ_MAX_RETRIES });
     const data = await groqRes.json();
     if (!groqRes.ok) {
       // Un error de Groq (clave inválida, rate limit, etc.) no es una
@@ -259,7 +296,7 @@ app.get("/tts/voices", (_req, res) => {
 
 async function llamarElevenLabs(text, voiceId, modelo) {
   const settings = voiceSettingsPara(modelo);
-  const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+  const ttsRes = await fetchConReintentos(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -269,7 +306,7 @@ async function llamarElevenLabs(text, voiceId, modelo) {
       "xi-api-key": process.env.ELEVENLABS_API_KEY
     },
     body: JSON.stringify({ text, model_id: modelo, voice_settings: settings })
-  });
+  }, { timeoutMs: ELEVENLABS_TIMEOUT_MS, maxRetries: ELEVENLABS_MAX_RETRIES });
   return ttsRes;
 }
 
@@ -294,10 +331,15 @@ app.post("/tts", async (req, res) => {
       codigo: "falta_voz_espanol"
     });
   }
-  if (!ttsDentroDeLimiteDiario()) {
-    return res.status(429).json({ error: "Se alcanzó el límite diario de voz IA configurado en el backend. Probá de nuevo mañana, o usá la voz del dispositivo.", codigo: "limite_diario" });
-  }
 
+  // Orden importante (Etapa 3 de la auditoría de seguridad): primero se
+  // calcula el hash y se revisa la caché, y SOLO si no hay nada cacheado
+  // se chequea (y consume) el límite diario, justo antes de llamar de
+  // verdad a ElevenLabs. Antes, ttsDentroDeLimiteDiario() se llamaba
+  // ANTES de revisar la caché, así que un pedido que terminaba
+  // sirviéndose desde caché igual gastaba una unidad del límite diario —
+  // el límite debe reflejar llamadas reales al proveedor, no
+  // reproducciones repetidas de algo ya generado.
   const modelo = modeloPedido || (contexto === "documento" ? MODELO_DOCUMENTO : MODELO_CHAT);
   const settings = voiceSettingsPara(modelo);
   const hash = hashTts(text, voiceId, modelo, settings);
@@ -306,6 +348,10 @@ app.post("/tts", async (req, res) => {
     res.set("Content-Type", "audio/mpeg");
     res.set("X-Tts-Cache", "hit");
     return res.send(cacheado);
+  }
+
+  if (!ttsDentroDeLimiteDiario()) {
+    return res.status(429).json({ error: "Se alcanzó el límite diario de voz IA configurado en el backend. Probá de nuevo mañana, o usá la voz del dispositivo.", codigo: "limite_diario" });
   }
 
   try {
@@ -340,14 +386,11 @@ app.post("/tts", async (req, res) => {
 // mueve al backend para poder validar el destino y evitar SSRF (que la
 // URL apunte a una IP privada/localhost de la propia infraestructura).
 //
-// Límite conocido: se resuelve el DNS UNA vez para decidir si se permite,
-// pero el fetch posterior no fuerza esa misma IP (Node/undici no expone
-// fácil esa opción). Esto no protege contra un ataque de "DNS rebinding"
-// bien armado (un dominio que resuelve distinto entre el chequeo y el
-// pedido real). Para el caso de uso (compartir un link de un documento
-// propio) alcanza para bloquear los intentos obvios; no se lo puede
-// llamar una protección SSRF completa.
+// La protección SSRF en sí (protocolo, hostname, TODAS las IPs resueltas,
+// redirecciones seguidas a mano y revalidadas en cada salto) vive en
+// src/security/ssrf.js -- ver ese archivo y sus tests para el detalle.
 const MAX_FETCH_BYTES = 20 * 1024 * 1024; // 20 MB, igual que el límite del frontend
+const MAX_FETCH_REDIRECTS = 3;
 const limiterFetch = rateLimit({
   windowMs: 60 * 1000,
   max: 15,
@@ -357,57 +400,32 @@ const limiterFetch = rateLimit({
 });
 app.use(["/fetch-document"], limiterFetch);
 
-function ipEsPrivadaOReservada(ip) {
-  if (ip.includes(":")) {
-    // IPv6: loopback, link-local y ULA (fc00::/7).
-    const low = ip.toLowerCase();
-    return low === "::1" || low.startsWith("fe80:") || low.startsWith("fc") || low.startsWith("fd");
-  }
-  const partes = ip.split(".").map(Number);
-  if (partes.length !== 4 || partes.some(n => Number.isNaN(n))) return true; // formato raro: mejor bloquear
-  const [a, b] = partes;
-  if (a === 127) return true; // loopback
-  if (a === 10) return true; // privada
-  if (a === 172 && b >= 16 && b <= 31) return true; // privada
-  if (a === 192 && b === 168) return true; // privada
-  if (a === 169 && b === 254) return true; // link-local
-  if (a === 0) return true; // "esta red"
-  if (a >= 224) return true; // multicast/reservado
-  return false;
-}
-
 app.post("/fetch-document", async (req, res) => {
   const { url } = req.body || {};
   if (typeof url !== "string" || !url.trim()) {
     return res.status(400).json({ error: "Falta la URL del documento." });
   }
-  let parsed;
   try {
-    parsed = new URL(url);
+    new URL(url); // solo para dar un error claro de "URL inválida" antes de entrar a la protección SSRF
   } catch {
     return res.status(400).json({ error: "Esa URL no parece válida." });
   }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return res.status(400).json({ error: "Solo se admiten enlaces http:// o https://." });
-  }
-  if (/^(localhost|127\.|0\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.)/.test(parsed.hostname)) {
-    return res.status(400).json({ error: "Esa dirección no está permitida." });
-  }
+
+  let upstream, finalUrl;
   try {
-    const { address } = await dns.lookup(parsed.hostname);
-    if (ipEsPrivadaOReservada(address)) {
-      return res.status(400).json({ error: "Esa dirección no está permitida." });
+    ({ response: upstream, finalUrl } = await descargarConProteccionSsrf(url, {
+      maxRedirects: MAX_FETCH_REDIRECTS,
+      timeoutMs: 20000
+    }));
+  } catch (error) {
+    if (error instanceof SsrfBlockedError) {
+      return res.status(400).json({ error: error.message });
     }
-  } catch {
-    return res.status(400).json({ error: "No se pudo resolver ese dominio." });
+    console.error("Error en /fetch-document:", error.message);
+    return res.status(502).json({ error: "No se pudo descargar ese enlace." });
   }
 
   try {
-    const upstream = await fetch(parsed.toString(), {
-      redirect: "follow",
-      signal: AbortSignal.timeout(20000),
-      headers: { "User-Agent": "MedusaLee-fetch-document/1.0" }
-    });
     if (!upstream.ok) {
       return res.status(upstream.status).json({ error: `El servidor de origen respondió ${upstream.status}.` });
     }
@@ -437,7 +455,7 @@ app.post("/fetch-document", async (req, res) => {
     }
     const buffer = Buffer.concat(partes.map(p => Buffer.from(p)));
     res.set("Content-Type", contentType);
-    res.set("X-Original-Url", parsed.toString());
+    res.set("X-Original-Url", finalUrl);
     res.send(buffer);
     // No se guarda nada del contenido después de responder: no hay
     // escritura a disco ni log del cuerpo del documento.
@@ -507,14 +525,24 @@ app.get("/voice/piper/audio/:nombre", async (req, res) => {
 
 // Estado del servidor: para que el frontend sepa si está despierto y qué
 // claves tiene configuradas, sin exponer las claves en sí.
-app.get("/health", (_req, res) => {
+app.get("/health", async (_req, res) => {
+  // vozLocalHabilitada/vozLocalDisponible/vozLocalEstado están separados
+  // a propósito (Etapa 3 de la auditoría de seguridad): antes,
+  // TTS_ENABLED=true solo ya alcanzaba para que /health mostrara la voz
+  // local como disponible, aunque el modelo nunca se hubiera descargado.
+  // "estado" es un código estable para diagnosticar sin exponer rutas
+  // completas del servidor (ver src/voice/voiceService.js).
+  const voz = await estadoVozLocal();
   res.json({
     status: "ok",
     groqConfigurado: Boolean(process.env.GROQ_API_KEY),
     elevenlabsConfigurado: Boolean(process.env.ELEVENLABS_API_KEY),
     vozHombreConfigurada: Boolean(VOZ_HOMBRE),
     vozMujerConfigurada: Boolean(VOZ_MUJER),
-    vozLocalConfigurada: vozLocalHabilitada()
+    vozLocalHabilitada: voz.habilitada,
+    vozLocalDisponible: voz.disponible,
+    vozLocalEstado: voz.estado,
+    turnstileHabilitado: TURNSTILE_ENABLED
   });
 });
 
@@ -529,5 +557,14 @@ app.use((err, _req, res, next) => {
   next(err);
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🪼 Backend de MedusaLee en puerto ${PORT}`));
+// Solo arranca a escuchar cuando se ejecuta directamente ("node server.js" /
+// "npm start"), no cuando este archivo se importa (por ejemplo desde los
+// tests de integración, que arrancan su propia instancia en un puerto
+// efímero con app.listen(0)).
+const esEjecucionDirecta = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
+if (esEjecucionDirecta) {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => console.log(`🪼 Backend de MedusaLee en puerto ${PORT}`));
+}
+
+export default app;

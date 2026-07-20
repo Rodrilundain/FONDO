@@ -6,7 +6,7 @@
 // (ni en Linux/Mac ni en Windows).
 
 import { spawn } from "node:child_process";
-import { access, constants as fsConstants, mkdir, readdir, stat, unlink } from "node:fs/promises";
+import { access, constants as fsConstants, mkdir, readdir, stat, unlink, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import { platform } from "node:os";
@@ -56,6 +56,23 @@ export async function verificarPiperDisponible(piperConfig) {
   }
 
   return { disponible: errores.length === 0, errores, configPath };
+}
+
+// Confirma que la carpeta de salida exista (la crea si hace falta, igual
+// que sintetizarConPiper) y que de verdad se pueda escribir ahí -- separa
+// "el ejecutable/modelo están bien" de "el servidor puede guardar el
+// .wav resultante" (por ejemplo, un filesystem de solo lectura o sin
+// permisos, algo que verificarPiperDisponible no detecta).
+export async function carpetaAudioEsEscribible(directorio) {
+  try {
+    await mkdir(directorio, { recursive: true });
+    const rutaPrueba = path.join(directorio, `.medusa-piper-permtest-${crypto.randomBytes(4).toString("hex")}`);
+    await writeFile(rutaPrueba, "");
+    await rm(rutaPrueba, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // Corre Piper una vez sobre `texto` y devuelve la ruta del .wav generado.

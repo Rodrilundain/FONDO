@@ -103,3 +103,74 @@ test("index.js: ruta desconocida da 404", async () => {
   const res = await worker.fetch(new Request("https://worker.test/ruta-inventada"), env(), ctxFalso());
   assert.equal(res.status, 404);
 });
+
+test("index.js: /health informa turnstileHabilitado y rateLimitBindingActivo", async () => {
+  const res = await worker.fetch(new Request("https://worker.test/health"), env({ TURNSTILE_ENABLED: "true" }), ctxFalso());
+  const data = await res.json();
+  assert.equal(data.turnstileHabilitado, true);
+  assert.equal(data.rateLimitBindingActivo, false); // env() de test no trae binding RATE_LIMITER
+});
+
+test("index.js: con TURNSTILE_ENABLED=true, un pedido sin turnstileToken se rechaza con 403 sin llamar a Gemini", async () => {
+  reiniciarCache();
+  reiniciarLimitador();
+  let llamadasAGemini = 0;
+  global.fetch = async (url) => {
+    if (String(url).includes("siteverify")) return { json: async () => ({ success: false, "error-codes": ["missing-input-response"] }) };
+    llamadasAGemini++;
+    return { ok: true, status: 200, json: async () => ({ candidates: [{ content: { parts: [{ text: "no deberia llegar aca" } ] } }] }) };
+  };
+
+  const res = await worker.fetch(new Request("https://worker.test/api/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Origin": "https://tu-usuario.github.io" },
+    body: JSON.stringify({ task: "summary", content: "Documento de prueba." })
+  }), env({ TURNSTILE_ENABLED: "true", TURNSTILE_SECRET_KEY: "secreto-de-prueba" }), ctxFalso());
+
+  assert.equal(res.status, 403);
+  assert.equal(llamadasAGemini, 0, "no deberia haber gastado una llamada al proveedor de IA");
+});
+
+test("index.js: con TURNSTILE_ENABLED=true y token valido, el pedido sigue su curso normal", async () => {
+  reiniciarCache();
+  reiniciarLimitador();
+  global.fetch = async (url) => {
+    if (String(url).includes("siteverify")) return { json: async () => ({ success: true, "error-codes": [] }) };
+    return { ok: true, status: 200, json: async () => ({ candidates: [{ content: { parts: [{ text: "Respuesta generada." } ] } }] }) };
+  };
+
+  const res = await worker.fetch(new Request("https://worker.test/api/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Origin": "https://tu-usuario.github.io" },
+    body: JSON.stringify({ task: "summary", content: "Documento de prueba.", turnstileToken: "token-valido" })
+  }), env({ TURNSTILE_ENABLED: "true", TURNSTILE_SECRET_KEY: "secreto-de-prueba" }), ctxFalso());
+
+  const data = await res.json();
+  assert.equal(data.success, true);
+});
+
+test("index.js: TURNSTILE_ENABLED=true sin TURNSTILE_SECRET_KEY configurado da 500 (mal configurado, no deja pasar)", async () => {
+  reiniciarCache();
+  reiniciarLimitador();
+  const res = await worker.fetch(new Request("https://worker.test/api/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Origin": "https://tu-usuario.github.io" },
+    body: JSON.stringify({ task: "summary", content: "hola", turnstileToken: "algo" })
+  }), env({ TURNSTILE_ENABLED: "true" }), ctxFalso());
+  assert.equal(res.status, 500);
+});
+
+test("index.js: rate limit usa el binding RATE_LIMITER cuando esta presente", async () => {
+  reiniciarCache();
+  reiniciarLimitador();
+  mockFetchExitoso("Respuesta generada.");
+  const bindingQueDeniega = { limit: async () => ({ success: false }) };
+
+  const res = await worker.fetch(new Request("https://worker.test/api/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Origin": "https://tu-usuario.github.io" },
+    body: JSON.stringify({ task: "summary", content: "Documento distinto para no pegarle a la cache." })
+  }), env({ RATE_LIMITER: bindingQueDeniega }), ctxFalso());
+
+  assert.equal(res.status, 429);
+});

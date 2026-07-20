@@ -99,6 +99,16 @@
         <div class="status">Función adicional aparte del chat: resúmenes, preguntas de estudio, conceptos clave y más. Sin configurar esto, MedusaLee sigue funcionando exactamente igual.</div>
         <div class="status" id="workerConnStatus" role="status" aria-live="polite">⚪ Worker de IA: no configurado</div>
       </div>
+      <div class="url-box">
+        <label for="turnstileSiteKeyInput">🛡️ Turnstile (opcional, solo si tu backend/Worker lo exige)</label>
+        <input type="text" id="turnstileSiteKeyInput" placeholder="Clave pública (site key) de Cloudflare Turnstile">
+        <div class="status">Si quien administra este backend activó Turnstile, pegá acá la clave pública que te dio (no es secreta). Sin esto, y con Turnstile desactivado del lado del servidor, MedusaLee sigue funcionando igual.</div>
+        <div id="turnstileContenedor" hidden></div>
+      </div>
+      <div class="url-box">
+        <label><input type="checkbox" id="proxiesPublicosDeshabilitadosInput"> 🔒 No usar nunca servicios externos (proxies) para cargar documentos por enlace</label>
+        <div class="status">Si el backend no puede descargar un enlace, MedusaLee puede ofrecerte probar con un servicio externo (r.jina.ai, corsproxy.io o allorigins.win) — eso comparte esa URL con ese tercero. Con esta opción activada, nunca se ofrece ni se usa ninguno: si el backend falla, la carga del enlace simplemente falla con un aviso claro.</div>
+      </div>
     </details>
 
     <div class="menu-footer">
@@ -221,6 +231,7 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://unpkg.com/mammoth@1.6.0/mammoth.browser.min.js"></script>
+  <script src="js/seguridad.js"></script>
   <script src="js/animacion.js"></script>
   <script src="js/voz.js"></script>
   <script src="js/documentos.js"></script>

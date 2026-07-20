@@ -1,3 +1,13 @@
+# Publica SOLO el frontend estático en GitHub Pages (Etapa 4 de la
+# auditoría de seguridad). Antes esto publicaba el repositorio entero con
+# "path: ." -- eso exponía server/, worker/, tests, el Dockerfile y
+# documentación interna en la URL pública. Ahora arma una carpeta dist/
+# con nada más que lo que el navegador necesita (index.html, css/, js/) y
+# publica esa carpeta.
+#
+# El despliegue depende de que pasen los tests (needs: test): nunca
+# publica una versión con tests fallando.
+
 name: Deploy to GitHub Pages
 
 on:
@@ -7,24 +17,46 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
+  test:
+    uses: ./.github/workflows/tests-reusable.yml
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Armar dist/ solo con los archivos públicos del frontend
+        run: |
+          set -eu
+          mkdir dist
+          cp index.html dist/
+          cp -r css dist/css
+          cp -r js dist/js
+          echo "Contenido final de dist/:"
+          find dist -type f | sort
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+        with:
+          path: dist
+
   deploy:
     runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: .
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

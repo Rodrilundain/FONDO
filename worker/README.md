@@ -13,9 +13,10 @@ Usuario -> MedusaLee (GitHub Pages) -> este Worker -> Gemini (principal)
 **Es un backend nuevo, en paralelo al de Render/Groq que ya funciona.**
 No reemplaza nada: `/ask` en `server/server.js` sigue funcionando igual
 que siempre. Este Worker es una opción adicional (10 tareas de IA
-distintas, ver abajo), no todavía conectada a la interfaz de MedusaLee --
-esa conexión (Etapa 8 del pedido original) queda para una siguiente
-ronda, a definir con el usuario.
+distintas, ver abajo), conectada a la interfaz de MedusaLee a través del
+panel "Funciones de IA" (`js/aiWorker.js`) — oculto hasta que se
+configure una URL de Worker en "⚙️ Configuración avanzada" y haya un
+documento cargado.
 
 ## Qué se verificó de verdad en este entorno de desarrollo
 
@@ -61,6 +62,16 @@ ronda, a definir con el usuario.
   2026, no de una lectura directa de la documentación oficial --
   confirmalo vos en ese link antes de desplegar a producción, o simplemente
   configurá `GEMINI_MODEL` con el que confirmes.
+- **Turnstile y el binding de Rate Limiting en vivo** (agregados en la
+  Etapa 2 de la auditoría de seguridad): la sintaxis de
+  `[[ratelimits]]` en `wrangler.toml` sí se verificó con
+  `wrangler deploy --dry-run` (reconoce el binding como `Rate Limit`,
+  `env.RATE_LIMITER (20 requests/60s)`), y el contrato de
+  `challenges.cloudflare.com/turnstile/v0/siteverify` está tomado de la
+  documentación oficial de Cloudflare Turnstile -- pero ninguno de los
+  dos se probó contra un Worker desplegado de verdad ni una cuenta de
+  Cloudflare real (no disponible en este entorno). Cubiertos por tests
+  con `fetch`/binding mockeados, no en vivo.
 
 ## Instalación local
 
@@ -74,6 +85,7 @@ npm install
 ```bash
 npx wrangler secret put GEMINI_API_KEY
 npx wrangler secret put OPENROUTER_API_KEY   # opcional
+npx wrangler secret put TURNSTILE_SECRET_KEY # opcional, solo si activás Turnstile (ver mas abajo)
 ```
 
 Te van a pedir pegar el valor en un prompt interactivo -- no queda
@@ -107,9 +119,56 @@ claves de prueba.
 | *(`MAX_FILE_SIZE_MB`, no está acá)* | Este Worker nunca recibe archivos, solo texto ya extraído (JSON) — el límite de tamaño de archivo real vive en el frontend (`js/documentos.js`, `MAX_FILE_SIZE_MB = 20`) y en `server/server.js` (`MAX_FETCH_BYTES`) para las descargas por URL. Agregar esa variable acá no tendría ningún efecto real, así que no se hizo. | — |
 | `GEMINI_MODEL` | Ver advertencia arriba: confirmalo vos. Sin esto, se usa el default no verificado. | *(sin setear)* |
 | `OPENROUTER_MODEL` | Sin esto, el respaldo se informa como no configurado (a propósito, para no fijar un modelo gratis que podría haber dejado de existir). | *(sin setear, respaldo deshabilitado)* |
+| `AI_RATE_LIMIT_POR_MINUTO` | Límite del respaldo en memoria (ver "Rate limiting" mas abajo). El límite del binding nativo se fija aparte, en `[ratelimits.simple]`. | `20` |
+| `TURNSTILE_ENABLED` | Activa la verificación de Cloudflare Turnstile en `/api/generate` (ver mas abajo). | `false` |
 
 Editá estos valores directamente en `wrangler.toml` (no son secretos) o
 con `npx wrangler deploy --var CLAVE:valor` puntualmente.
+
+## Turnstile (opcional, Etapa 2 de la auditoría)
+
+Protege `/api/generate` de scripts automatizados sin exigir que la
+persona se loguee. Con `TURNSTILE_ENABLED=false` (default), no hace nada
+-- el Worker funciona exactamente igual que antes.
+
+Para activarlo:
+
+1. Creá un sitio en el [dashboard de Turnstile](https://dash.cloudflare.com/?to=/:account/turnstile)
+   (Cloudflare, gratis) -- te da dos claves: una **site key** (pública) y
+   una **secret key** (privada).
+2. `npx wrangler secret put TURNSTILE_SECRET_KEY` con la secret key.
+3. `TURNSTILE_ENABLED = "true"` en `wrangler.toml`.
+4. En MedusaLee (frontend), pegá la site key en "⚙️ Configuración
+   avanzada" → Turnstile (ver `js/seguridad.js`). El widget se muestra
+   solo, resuelve un token, y ese token viaja en
+   `payload.turnstileToken` en cada pedido a `/api/generate` -- sin eso,
+   el Worker devuelve 403 sin llegar a gastar una llamada a Gemini/OpenRouter.
+
+**No verificado**: no se pudo crear un sitio de Turnstile real ni probar
+el flujo completo (widget → token → `/turnstile/v0/siteverify`) desde
+este entorno de desarrollo (sin cuenta de Cloudflare disponible acá). La
+llamada a `siteverify` sigue el contrato documentado oficialmente
+(developers.cloudflare.com/turnstile), cubierta por tests con `fetch`
+mockeado -- no contra el servicio real.
+
+## Rate limiting
+
+Dos capas, en `src/security.js`:
+
+1. **Binding nativo de Cloudflare** (`env.RATE_LIMITER`, ver
+   `[[ratelimits]]` en `wrangler.toml`): un límite de verdad, global entre
+   isolates/regiones -- confirmado con `wrangler deploy --dry-run`
+   (reconoce el binding como `Rate Limit`), pero no probado en un Worker
+   desplegado de verdad (sin cuenta de Cloudflare disponible acá).
+2. **Respaldo en memoria** (el limitador que ya existía): se usa
+   automáticamente si el binding no está disponible (por ejemplo en
+   `wrangler dev` sin el binding, o en los tests) o si falla en tiempo de
+   ejecución.
+
+La clave del límite es el ID de sesión que manda el frontend en el header
+`X-Medusa-Session-Id` (generado una vez por navegador, ver
+`js/seguridad.js`) si está presente y tiene forma válida; si no, se cae a
+la IP (`CF-Connecting-IP`) como antes.
 
 ## Desplegar
 
@@ -178,7 +237,8 @@ npm test
     "task": "summary",
     "content": "texto del documento o fragmento",
     "options": { "language": "es", "detail": "medium" },
-    "bloques": [{ "pagina": 1, "texto": "..." }]
+    "bloques": [{ "pagina": 1, "texto": "..." }],
+    "turnstileToken": "token-resuelto-por-el-widget"
   }
   ```
   `task` es una de: `summary`, `explain_simple`, `qa`, `chat`,
@@ -186,6 +246,8 @@ npm test
   `extract_data`, `section_explanation`. `bloques` es opcional (la misma
   forma que ya usa `js/documentos.js` del frontend) y solo se usa para
   conservar referencias de página/sección en resúmenes largos.
+  `turnstileToken` solo hace falta si `TURNSTILE_ENABLED=true` (ver mas
+  abajo); si Turnstile está desactivado, se ignora aunque venga.
 
   Respuesta (éxito):
   ```json
@@ -204,20 +266,12 @@ npm test
 | `SIN_API_KEY` | Falta `wrangler secret put GEMINI_API_KEY` (o `OPENROUTER_API_KEY`). |
 | `SIN_MODELO` en el respaldo | No configuraste `OPENROUTER_MODEL` -- es a propósito, no un bug. |
 | `CLAVE_INVALIDA` | La clave está mal copiada o vencida/revocada. |
-| `429` | Límite de solicitudes por minuto alcanzado (ver limitación conocida abajo). |
+| `429` | Límite de solicitudes por minuto alcanzado (ver "Rate limiting" arriba). |
+| `403 No se pudo verificar que sos una persona` | Turnstile está activo (`TURNSTILE_ENABLED=true`) y falta o es inválido `turnstileToken` -- confirmá que pegaste la site key correcta en el frontend. |
+| `500` en `/api/generate` con Turnstile activo | Falta `wrangler secret put TURNSTILE_SECRET_KEY` en el Worker. |
 | El Worker no arranca con `wrangler dev` | Corré `npm install` primero dentro de `worker/`. |
 
-## Limitación conocida: el límite de solicitudes es aproximado
-
-El contador de `src/security.js` vive en memoria dentro de cada instancia
-(isolate) del Worker. Cloudflare puede correr o reciclar varias instancias
-en paralelo, así que este límite es una capa básica adicional, no una
-protección exacta y global contra abuso. Para algo más robusto, Cloudflare
-ofrece un binding nativo de Rate Limiting y Durable Objects/KV -- no se
-implementó acá porque no se pudo verificar su sintaxis exacta contra la
-documentación oficial (Cloudflare está bloqueado en este entorno de
-desarrollo). Si esto te importa en producción, es el primer lugar para
-mejorar.
+## Limitación conocida: la caché de solicitudes es aproximada
 
 El caché de solicitudes idénticas (`src/cache.js`) tiene la misma
 limitación: vive en memoria por isolate (máximo 100 entradas, se
