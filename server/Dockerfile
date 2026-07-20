@@ -15,20 +15,32 @@
 # funcionando igual (Piper queda sin voz configurada). Revisá el log de
 # build si la voz no aparece disponible después de desplegar.
 #
-# Etapa 4 de la auditoría de seguridad (endurecimiento del Dockerfile):
-# imagen base fijada por digest (verificado en vivo contra
-# registry-1.docker.io, no inventado), versión de piper-tts fijada,
-# npm ci en vez de npm install, usuario sin privilegios para correr Node,
-# HEALTHCHECK, y límite de concurrencia para Piper (ver
+# Segunda advertencia honesta (Punto 12 de la auditoría v2): la
+# reestructuración multi-stage de más abajo se escribió con
+# razonamiento cuidadoso (qué necesita pip/venv en tiempo de BUILD vs. en
+# tiempo de RUN), pero no se pudo confirmar con un "docker build" real en
+# este entorno de desarrollo (el daemon de Docker no está disponible acá,
+# sin privilegios para levantarlo). Antes de desplegar un cambio grande
+# como este, correlo una vez localmente o mirá el log del primer deploy
+# en Render con atención.
+#
+# Etapa 4 de la auditoría de seguridad + Punto 12 de la v2 (endurecimiento
+# del Dockerfile): imagen base fijada por digest (verificado en vivo
+# contra registry-1.docker.io, no inventado), versión de piper-tts
+# fijada, npm ci en vez de npm install, usuario sin privilegios para
+# correr Node, HEALTHCHECK, límite de concurrencia para Piper (ver
 # src/voice/concurrencyLimiter.js, no es parte de este archivo pero
-# responde al mismo pedido).
+# responde al mismo pedido), y ahora build multi-stage: pip/venv (solo
+# hacen falta para INSTALAR piper-tts, no para correrlo) quedan afuera de
+# la imagen final -- la etapa final solo copia la venv ya armada.
 
-# node:20-slim (Debian 12 "bookworm"), digest resuelto en vivo el
-# 2026-07-20 contra registry-1.docker.io/v2/library/node/manifests/20-slim.
-FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+# ---- Etapa "piper-builder": arma la venv de Piper y descarga el modelo ----
+# Usa la MISMA imagen base (mismo digest) que la etapa final, así el
+# intérprete de Python de ambas etapas es exactamente el mismo build --
+# la venv armada acá (con pip/venv presentes) sigue siendo utilizable en
+# la etapa final (con solo el intérprete, sin pip/venv).
+FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS piper-builder
 
-# Python + pip: node:20-slim se basa en Debian y trae python3, pero no
-# pip ni venv por defecto.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       python3 \
       python3-venv \
@@ -51,11 +63,28 @@ RUN python3 -m venv /opt/piper-venv \
 # corriendo "python -m piper.download_voices" (sin argumentos) para ver
 # el catálogo vigente, ver server/src/voice/README.md.
 ARG PIPER_VOICE_NAME=es_AR-daniela-high
-ENV PIPER_VOICE_NAME=${PIPER_VOICE_NAME}
 
 RUN mkdir -p /app/models/piper \
     && ( /opt/piper-venv/bin/python -m piper.download_voices "${PIPER_VOICE_NAME}" --download-dir /app/models/piper \
          || echo "ADVERTENCIA DE BUILD: no se pudo descargar la voz '${PIPER_VOICE_NAME}'. Piper va a quedar sin modelo configurado (MedusaLee sigue funcionando igual, sin esa voz). Ver server/src/voice/README.md." )
+
+# ---- Etapa final: solo lo que hace falta para CORRER, no para instalar ----
+FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+
+# Solo el intérprete de Python para EJECUTAR Piper -- pip y venv (que sí
+# hacían falta para instalarlo) no viajan a la imagen final. Una venv ya
+# armada no necesita pip presente para que sus programas corran, solo un
+# intérprete de Python compatible (el mismo, porque es la misma imagen
+# base que piper-builder).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=piper-builder /opt/piper-venv /opt/piper-venv
+COPY --from=piper-builder /app/models /app/models
+
+ARG PIPER_VOICE_NAME=es_AR-daniela-high
+ENV PIPER_VOICE_NAME=${PIPER_VOICE_NAME}
 
 WORKDIR /app
 
@@ -73,8 +102,9 @@ COPY . .
 # Usuario sin privilegios para correr el servidor: node:20-slim ya trae
 # un usuario "node" (uid/gid 1000) pensado para esto, así que no hace
 # falta crear uno nuevo. Se le da dueño de /app (el código y la carpeta
-# de audio temporal que Piper necesita poder escribir) y de la venv de
-# Piper (necesita poder ejecutar el binario, no solo leerlo).
+# de audio temporal que Piper necesita poder escribir, ya presente desde
+# el checkout vía src/voice/audio/.gitkeep) y de la venv de Piper copiada
+# de la otra etapa (necesita poder ejecutar el binario, no solo leerlo).
 RUN chown -R node:node /app /opt/piper-venv
 USER node
 
