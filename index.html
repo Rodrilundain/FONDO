@@ -147,6 +147,19 @@
     </div>
     <input type="file" id="docFile" accept=".txt,.md,.pdf,.docx" hidden aria-label="Seleccionar archivo del documento">
 
+    <div class="shared-doc-confirm" id="sharedDocConfirmPanel" role="alertdialog" aria-labelledby="sharedDocConfirmTitulo" hidden>
+      <div class="shared-doc-confirm-titulo" id="sharedDocConfirmTitulo">📎 Este enlace llegó junto con la página</div>
+      <div class="shared-doc-confirm-detalle">
+        <div>Dominio: <strong id="sharedDocConfirmDominio"></strong></div>
+        <div>Tipo estimado: <span id="sharedDocConfirmTipo"></span></div>
+        <div>Enlace: <span id="sharedDocConfirmUrl"></span></div>
+      </div>
+      <div class="shared-doc-confirm-botones">
+        <button type="button" id="sharedDocConfirmCargar" class="hero-btn">Cargar documento</button>
+        <button type="button" id="sharedDocConfirmCancelar" class="hero-btn hero-btn-secundario">Cancelar</button>
+      </div>
+    </div>
+
     <div class="status" id="status" role="status" aria-live="polite">Sin documento cargado</div>
 
     <div class="objetivo-panel" id="objetivoPanel" hidden>
@@ -232,6 +245,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://unpkg.com/mammoth@1.6.0/mammoth.browser.min.js"></script>
   <script src="js/seguridad.js"></script>
+  <script src="js/security/privacidadEnlaces.js"></script>
   <script src="js/animacion.js"></script>
   <script src="js/voz.js"></script>
   <script src="js/documentos.js"></script>

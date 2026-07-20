@@ -20,6 +20,12 @@ const heroLinkRow = document.getElementById("heroLinkRow");
 const playbackControls = document.getElementById("playbackControls");
 const dropzone = document.getElementById("dropzone");
 const heroPanel = document.getElementById("heroPanel");
+const sharedDocConfirmPanel = document.getElementById("sharedDocConfirmPanel");
+const sharedDocConfirmDominio = document.getElementById("sharedDocConfirmDominio");
+const sharedDocConfirmTipo = document.getElementById("sharedDocConfirmTipo");
+const sharedDocConfirmUrl = document.getElementById("sharedDocConfirmUrl");
+const sharedDocConfirmCargar = document.getElementById("sharedDocConfirmCargar");
+const sharedDocConfirmCancelar = document.getElementById("sharedDocConfirmCancelar");
 
 let documentoCargado = "";
 let documentoBloques = []; // {pagina, texto} para PDF, {tipo, texto} para DOCX, [{texto}] para TXT/MD
@@ -47,40 +53,35 @@ if (proxiesPublicosDeshabilitadosInput) {
   });
 }
 
-// Heurística "mejor esfuerzo" para no mandar a un tercero una URL que
-// parece llevar un token, una firma o un enlace temporal (por ejemplo,
-// un link prefirmado de S3, un enlace de descarga con expiración, o un
-// JWT pegado en la URL). No es exhaustiva, pero cubre los casos más
-// comunes sin bloquear enlaces normales.
-function urlPareceSensible(url) {
-  let params;
-  try {
-    params = new URL(url).searchParams;
-  } catch {
-    return false;
-  }
-  const NOMBRES_SENSIBLES = /token|signature|sig|auth|credential|secret|password|apikey|api[-_]?key|access[-_]?key|session|jwt|expires/i;
-  for (const clave of params.keys()) {
-    if (NOMBRES_SENSIBLES.test(clave)) return true;
-  }
-  // JWT "sueltos" en la URL (tres tramos base64url separados por punto).
-  if (/eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/.test(url)) return true;
-  return false;
-}
+// La heurística de qué URLs no deben mandarse a un tercero (token, firma,
+// credenciales, host local, URL excesivamente larga...) vive en
+// js/security/privacidadEnlaces.js -- separada de este archivo para poder
+// probarla sin DOM (ver js/security/__tests__/privacidadEnlaces.test.mjs)
+// y porque es lógica de seguridad/validación, no de manejo de documentos.
+// No se destructuran los nombres (const { dominioDeUrl, ... } = ...):
+// documentos.js y privacidadEnlaces.js son dos <script> clásicos que
+// comparten un mismo scope global, y esos mismos nombres ya existen ahí
+// como declaraciones `function` -- una `const` con el mismo nombre en
+// OTRO script del mismo scope global es un SyntaxError en el navegador
+// ("Identifier ... has already been declared"), aunque cada script se
+// vea aislado al leerlo por separado. Confirmado con Playwright real.
+const PrivacidadEnlaces = window.MedusaPrivacidadEnlaces;
 
 // Pregunta una sola vez, nombrando los servicios concretos, antes de usar
 // CUALQUIER proxy externo para este enlace. Nunca pregunta (ni usa
 // proxies) si el enlace parece sensible, o si el usuario los desactivó
 // por completo en "Configuración avanzada".
 function puedeUsarProxiesPublicos(url) {
-  if (proxiesPublicosDeshabilitados) return false;
-  if (urlPareceSensible(url)) return false;
-  return confirm(
-    "MedusaLee no pudo descargar este enlace de forma directa/segura.\n\n" +
-    "¿Querés que se pruebe con un servicio externo (r.jina.ai, corsproxy.io o allorigins.win)? " +
-    "Esto comparte la URL del documento con ese tercero.\n\n" +
-    "Enlace: " + url
-  );
+  return PrivacidadEnlaces.decidirUsoDeProxies({
+    url,
+    proxiesDeshabilitados: proxiesPublicosDeshabilitados,
+    confirmarConUsuario: () => confirm(
+      "MedusaLee no pudo descargar este enlace de forma directa/segura.\n\n" +
+      "¿Querés que se pruebe con un servicio externo (r.jina.ai, corsproxy.io o allorigins.win)? " +
+      "Esto comparte la URL del documento con ese tercero.\n\n" +
+      "Enlace: " + url
+    )
+  });
 }
 
 function fijarBotonesDeCarga(deshabilitados) {
@@ -533,27 +534,38 @@ async function procesarArchivo(file) {
 
 docFileInput.addEventListener("change", () => procesarArchivo(docFileInput.files[0]));
 
-// Carga automática cuando el documento llega compartido por URL (?doc= o ?url=)
-// Etapa 5 de la auditoría de seguridad: un enlace recibido por ?doc=/?url=
-// ya NO se descarga solo con solo abrir la página -- se muestra la URL
-// recibida y se pide autorización explícita antes de descargar nada,
-// para que abrir un link compartido nunca dispare una descarga (y
-// potencialmente el envío de esa URL a un proxy externo) sin que la
-// persona lo haya decidido.
+// Carga automática cuando el documento llega compartido por URL (?doc= o
+// ?url=) -- Punto 4 de la auditoría v2 de seguridad: un enlace recibido
+// así ya NO se descarga solo con abrir la página, ni se pide autorización
+// con un simple diálogo confirm() del navegador. Se muestra un panel con
+// el dominio, el tipo estimado y la URL resumida, y hace falta tocar
+// "Cargar documento" a propósito -- para que abrir un link compartido
+// nunca dispare una descarga (y potencialmente el envío de esa URL a un
+// proxy externo) sin que la persona lo haya decidido conscientemente.
+function mostrarConfirmacionEnlaceCompartido(sharedUrl) {
+  heroLinkRow.hidden = false;
+  heroLinkBtn.setAttribute("aria-expanded", "true");
+  docUrlInput.value = sharedUrl;
+
+  sharedDocConfirmDominio.textContent = PrivacidadEnlaces.dominioDeUrl(sharedUrl);
+  sharedDocConfirmTipo.textContent = PrivacidadEnlaces.tipoEstimadoDeUrl(sharedUrl);
+  sharedDocConfirmUrl.textContent = PrivacidadEnlaces.resumirUrl(sharedUrl);
+  sharedDocConfirmPanel.hidden = false;
+
+  const ocultarPanel = () => { sharedDocConfirmPanel.hidden = true; };
+  sharedDocConfirmCargar.addEventListener("click", () => {
+    ocultarPanel();
+    loadDocumentFromUrl(sharedUrl);
+  }, { once: true });
+  sharedDocConfirmCancelar.addEventListener("click", () => {
+    ocultarPanel();
+    status.textContent = "El enlace quedó pegado en el campo de arriba. Presioná Enter ahí cuando quieras cargarlo.";
+  }, { once: true });
+}
+
 (function autoLoadSharedDoc() {
   const params = new URLSearchParams(window.location.search);
   const sharedUrl = params.get("doc") || params.get("url");
   if (!sharedUrl) return;
-  heroLinkRow.hidden = false;
-  heroLinkBtn.setAttribute("aria-expanded", "true");
-  docUrlInput.value = sharedUrl;
-  const autorizado = confirm(
-    "Este enlace llegó en la dirección de la página:\n\n" + sharedUrl + "\n\n" +
-    "¿Querés cargarlo ahora?"
-  );
-  if (autorizado) {
-    loadDocumentFromUrl(sharedUrl);
-  } else {
-    status.textContent = "El enlace quedó pegado en el campo de arriba. Presioná Enter ahí cuando quieras cargarlo.";
-  }
+  mostrarConfirmacionEnlaceCompartido(sharedUrl);
 })();

@@ -536,13 +536,21 @@ local). Exactamente esto sale del dispositivo, y a dónde:
   **Si el backend y la descarga directa del navegador fallan**, MedusaLee
   pregunta explícitamente (nombrando los servicios: r.jina.ai,
   corsproxy.io, allorigins.win) antes de mandarles la URL a alguno de
-  esos terceros — nunca se usan automáticamente ni en silencio, y hay una
-  opción en "⚙️ Configuración avanzada" para desactivarlos por completo
-  (ver "Limitaciones conocidas"). Tampoco se usan proxies si la URL
-  parece contener un token, firma o parámetro de sesión/expiración.
+  esos terceros — nunca se usan automáticamente ni en silencio, la
+  decisión se recuerda solo para esa carga puntual (no queda guardada), y
+  hay una opción en "⚙️ Configuración avanzada" para desactivarlos por
+  completo (ver "Limitaciones conocidas"). Tampoco se usan proxies si la
+  URL parece contener un token, firma (incluidas las de enlaces
+  prefirmados de S3/GCS -- `X-Amz-Signature`, `X-Goog-Signature`),
+  credenciales embebidas (`usuario:contraseña@host`), un parámetro de
+  sesión/expiración/clave de API, un JWT suelto, si apunta a un host
+  local o de red privada, o si es excesivamente larga (ver
+  `js/security/privacidadEnlaces.js`, con pruebas automatizadas propias).
   Un enlace recibido compartido en la propia URL de la página
-  (`?doc=`/`?url=`) tampoco se descarga solo: se pide confirmación
-  explícita, mostrando el enlace recibido, antes de cargar nada.
+  (`?doc=`/`?url=`) tampoco se descarga solo: se muestra un panel con el
+  dominio, el tipo estimado y el enlace (resumido si es largo), y hace
+  falta tocar "Cargar documento" a propósito — cancelar no borra el
+  enlace, solo no lo carga.
 - **Si usás alguna de las "Funciones de IA" del panel opcional** (resumen,
   preguntas de estudio, conceptos clave, etc.): el documento (o, para
   documentos muy largos, sus fragmentos) viaja al Cloudflare Worker
@@ -583,7 +591,9 @@ Dos tipos de pruebas conviven en este proyecto:
   SSRF+Turnstile+sesión firmada+límite de caracteres, 9 de
   timeouts/reintentos, 27 de integración contra la app Express real —
   rate limiting, `/session`, `trust proxy`, Turnstile, caché de TTS) + 67
-  en `worker/` (`npm test`) = **189 tests**, corridos en cada Pull
+  en `worker/` (`npm test`) + 20 en la raíz (`npm test`: lógica de
+  privacidad de enlaces del frontend -- `js/security/privacidadEnlaces.js`,
+  sin necesitar un navegador) = **209 tests**, corridos en cada Pull
   Request y push a `main` por `.github/workflows/ci.yml`. El detalle
   está en las filas de auditoría de seguridad más abajo.
 - **Manuales**, con Playwright real contra el frontend (sin framework de

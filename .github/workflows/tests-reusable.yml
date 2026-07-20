@@ -1,9 +1,9 @@
 # Workflow reusable (workflow_call) que corre TODOS los tests automatizados
-# del proyecto: el backend Express (server/) y el Worker de Cloudflare
-# (worker/). Lo llaman ci.yml (en cada PR y push a main) y los dos
-# workflows de despliegue (deploy-pages.yml, deploy-worker.yml), que
-# dependen de este job con "needs:" para nunca desplegar una versión con
-# tests fallando.
+# del proyecto: el backend Express (server/), el Worker de Cloudflare
+# (worker/), y la lógica de privacidad/seguridad del frontend (js/, sin
+# DOM). Lo llaman ci.yml (en cada PR y push a main) y los dos workflows de
+# despliegue (deploy-pages.yml, deploy-worker.yml), que dependen de este
+# job con "needs:" para nunca desplegar una versión con tests fallando.
 #
 # El pedido original de la auditoría pedía como mínimo:
 #   cd server && npm ci && npm run test:voice
@@ -47,4 +47,7 @@ jobs:
         run: npm ci
       - name: Worker (worker/) - correr tests
         working-directory: worker
+        run: npm test
+
+      - name: Frontend (js/) - correr tests de lógica sin DOM (privacidad de enlaces)
         run: npm test

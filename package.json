@@ -1,0 +1,8 @@
+{
+  "name": "medusalee-frontend",
+  "private": true,
+  "description": "Pruebas de la lógica de seguridad/privacidad del frontend (js/) que no depende del DOM. El backend tiene su propio package.json en server/, y el Worker en worker/.",
+  "scripts": {
+    "test": "node --test js/**/__tests__/*.test.mjs"
+  }
+}
