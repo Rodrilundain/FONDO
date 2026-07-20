@@ -9,9 +9,31 @@ import { textToSpeech, estadoVozLocal, rutaDirectorioAudioPiper } from "./src/vo
 import { descargarConProteccionSsrf, SsrfBlockedError } from "./src/security/ssrf.js";
 import { verificarTurnstile } from "./src/security/turnstile.js";
 import { fetchConReintentos } from "./src/net/httpRetry.js";
+import { generarSesionFirmada, verificarSesionFirmada } from "./src/security/sesionFirmada.js";
+import { crearLimitadorDeCaracteres } from "./src/security/limitadorCaracteres.js";
 dotenv.config();
 
 const app = express();
+
+// "trust proxy" (Etapa 3 / Punto 3 de la auditoría v2): Render pone este
+// backend detrás de su propio proxy, que agrega el header
+// X-Forwarded-For con la IP real del visitante. Sin avisarle esto a
+// Express, req.ip (y por lo tanto express-rate-limit) usa la IP del
+// proxy de Render -- la MISMA para todo el mundo -- lo que en la
+// práctica junta a todos los usuarios en el mismo cupo de rate limit.
+// Confirmado en este entorno (no es una suposición): con
+// "trust proxy" en false (el default) y un pedido con X-Forwarded-For,
+// express-rate-limit tira ERR_ERL_UNEXPECTED_X_FORWARDED_FOR.
+// RENDER=true lo pone Render automáticamente en todos sus servicios
+// (documentado en render.com/docs/environment-variables); TRUST_PROXY
+// permite forzarlo a mano para otros despliegues detrás de un proxy
+// (o desactivarlo con "false" si hiciera falta).
+const TRUST_PROXY_MANUAL = process.env.TRUST_PROXY;
+if (TRUST_PROXY_MANUAL !== undefined) {
+  app.set("trust proxy", TRUST_PROXY_MANUAL === "true" ? 1 : TRUST_PROXY_MANUAL === "false" ? false : TRUST_PROXY_MANUAL);
+} else if (process.env.RENDER === "true") {
+  app.set("trust proxy", 1);
+}
 
 // Cabeceras de seguridad básicas (sin agregar la dependencia "helmet" para
 // no sumar peso de más): evitan que el navegador adivine el tipo de
@@ -92,16 +114,64 @@ async function exigirTurnstile(req, res, next) {
 }
 app.use(["/ask", "/tts", "/fetch-document", "/voice/piper"], exigirTurnstile);
 
+// Sesión anónima firmada (Etapa 3 / Punto 3 de la auditoría v2): el rate
+// limit ya no depende solo de la IP. Sin RATE_LIMIT_SESSION_SECRET
+// configurada se genera una al arrancar el proceso -- sigue funcionando,
+// pero las sesiones emitidas no sobreviven un reinicio/redeploy (fijala
+// en producción si te importa que sí sobrevivan).
+const RATE_LIMIT_SESSION_SECRET = process.env.RATE_LIMIT_SESSION_SECRET || crypto.randomBytes(32).toString("hex");
+
+// Emite una sesión firmada nueva. Tiene su propio límite (aparte, más
+// generoso) para que no sirva como forma barata de fabricar cupos
+// infinitos combinando IP+sesión.
+const limiterSession = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Demasiados pedidos de sesión en poco tiempo. Esperá un minuto." }
+});
+app.get("/session", limiterSession, (_req, res) => {
+  res.json({ session: generarSesionFirmada(RATE_LIMIT_SESSION_SECRET) });
+});
+
+// Clave de rate limit: IP + sesión firmada si el cliente mandó una
+// válida (header X-Medusa-Session, emitida por /session de arriba); si
+// no, cae a la IP sola -- nunca peor que el comportamiento anterior.
+// Combinar ambas evita que varias personas detrás de la misma IP
+// compartida (oficina, CGNAT, red móvil) compitan por el mismo cupo.
+function claveLimite(req) {
+  const token = req.headers["x-medusa-session"];
+  const valor = typeof token === "string" ? verificarSesionFirmada(token, RATE_LIMIT_SESSION_SECRET) : null;
+  return valor ? `${req.ip}:${valor}` : req.ip;
+}
+
 // Rate limiting general para /ask (preguntas): máximo 20 pedidos por
-// minuto por IP, para evitar abuso y no quemar la cuota gratis de Groq.
+// minuto por IP+sesión, para evitar abuso y no quemar la cuota gratis de
+// Groq.
 const limiterAsk = rateLimit({
   windowMs: 60 * 1000,
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: claveLimite,
   message: { error: "Demasiadas solicitudes. Esperá un minuto e intentá de nuevo." }
 });
 app.use(["/ask"], limiterAsk);
+
+// Límite adicional por cantidad de caracteres acumulados por minuto
+// (Etapa 3 / Punto 3 de la auditoría v2): "no más de 20 pedidos" no
+// alcanza si cada uno de esos 20 pedidos manda un documento gigante --
+// esto pone un techo aparte al volumen de texto real procesado. Sin
+// configurar ASK_MAX_CHARACTERS_POR_MINUTO, no se aplica nada (mismo
+// comportamiento que antes).
+const limiterCaracteresAsk = crearLimitadorDeCaracteres({
+  maxCaracteresPorMinuto: Number(process.env.ASK_MAX_CHARACTERS_POR_MINUTO) || 0,
+  obtenerClave: claveLimite,
+  obtenerTexto: (req) => `${req.body?.context || ""}${req.body?.question || ""}`,
+  mensaje: "Se alcanzó el límite de texto procesado por minuto en /ask. Esperá un momento e intentá de nuevo."
+});
+app.use(["/ask"], limiterCaracteresAsk);
 
 // /tts tiene su propio límite, más estricto, porque cada pedido puede
 // consumir cuota paga de ElevenLabs (no solo cómputo propio como /ask).
@@ -111,9 +181,18 @@ const limiterTts = rateLimit({
   max: TTS_RATE_LIMIT_PER_MIN,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: claveLimite,
   message: { error: "Demasiados pedidos de voz IA en poco tiempo. Esperá un minuto e intentá de nuevo." }
 });
 app.use(["/tts"], limiterTts);
+
+const limiterCaracteresTts = crearLimitadorDeCaracteres({
+  maxCaracteresPorMinuto: Number(process.env.TTS_MAX_CHARACTERS_POR_MINUTO) || 0,
+  obtenerClave: claveLimite,
+  obtenerTexto: (req) => req.body?.text || "",
+  mensaje: "Se alcanzó el límite de texto procesado por minuto en /tts. Esperá un momento e intentá de nuevo."
+});
+app.use(["/tts"], limiterCaracteresTts);
 
 // Límite diario de pedidos a /tts (además del límite por minuto), para no
 // agotar la cuota mensual de ElevenLabs por accidente. Es un contador en
@@ -415,6 +494,7 @@ const limiterFetch = rateLimit({
   max: 15,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: claveLimite,
   message: { error: "Demasiados pedidos de descarga en poco tiempo. Esperá un minuto." }
 });
 app.use(["/fetch-document"], limiterFetch);
@@ -496,6 +576,7 @@ const limiterVoicePiper = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: claveLimite,
   message: { error: "Demasiados pedidos de voz local en poco tiempo. Esperá un minuto." }
 });
 app.use(["/voice/piper"], limiterVoicePiper);

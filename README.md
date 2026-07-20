@@ -312,6 +312,9 @@ npm start
 | `GROQ_TIMEOUT_MS` / `GROQ_MAX_RETRIES` | No | Timeout por pedido a Groq y cantidad de reintentos ante errores recuperables (timeout, caída de conexión, 429/500/502/503/504 — nunca 400 ni clave inválida). Por defecto `20000` / `2`. |
 | `ELEVENLABS_TIMEOUT_MS` / `ELEVENLABS_MAX_RETRIES` | No | Igual que arriba, para ElevenLabs. Por defecto `20000` / `2`. |
 | `PIPER_MAX_CONCURRENCIA` / `PIPER_MAX_EN_COLA` | No | Cuántas síntesis de Piper corren en paralelo (cada una es un proceso del sistema aparte) y cuántas más pueden esperar en cola antes de rechazar con un error claro. Por defecto `2` / `5`. |
+| `TRUST_PROXY` | No | Fuerza manualmente el ajuste `trust proxy` de Express (`"true"`, `"false"`, o un valor propio de Express). Sin definir, se activa solo si `RENDER=true` (Render lo pone automáticamente en todos sus servicios). Necesario para que `req.ip` (y por lo tanto el rate limiting) tome la IP real del visitante y no la del proxy de Render — sin esto, todo el mundo comparte el mismo cupo. |
+| `RATE_LIMIT_SESSION_SECRET` | No | Secreto para firmar las sesiones anónimas que emite `GET /session` (header `X-Medusa-Session`), usadas para combinar IP + sesión en la clave del rate limit y que varias personas detrás de la misma IP compartida (oficina, CGNAT, red móvil) no compitan por el mismo cupo. Si no la definís, se genera una al azar al arrancar — sigue funcionando, pero las sesiones no sobreviven un reinicio/redeploy. |
+| `ASK_MAX_CHARACTERS_POR_MINUTO` / `TTS_MAX_CHARACTERS_POR_MINUTO` | No | Techo adicional de caracteres acumulados por minuto (por IP+sesión) en `/ask` y `/tts`, aparte del límite de cantidad de pedidos — para que 20 pedidos "válidos" no puedan mandar igual documentos gigantes uno atrás del otro. Sin definir, no se aplica ningún límite (mismo comportamiento que antes). |
 
 Ninguna clave se pega en el código ni en `render.yaml`: siempre se
 configuran como variable de entorno (en Render, en el formulario web del
@@ -325,6 +328,29 @@ combinación que suena mejor depende de la voz específica que elijas en
 ElevenLabs. Conviene probar 2 o 3 combinaciones distintas con la voz ya
 configurada y quedarse con la que suene más natural (podés cambiarlos sin
 tocar código, solo variables de entorno).
+
+### Rate limiting y sesión anónima firmada
+
+Además del límite por IP (`express-rate-limit` en `/ask`, `/tts`,
+`/fetch-document` y `/voice/piper`), el backend combina **IP + sesión
+anónima firmada** cuando el cliente manda una: el frontend puede pedir
+`GET /session` (también limitado por IP, más generoso) para obtener un
+token `<valor>.<firma-HMAC>` y reenviarlo en el header `X-Medusa-Session`
+en los pedidos siguientes. Esto evita que varias personas detrás de la
+misma IP compartida (oficina, CGNAT, red móvil) compitan por el mismo
+cupo, sin depender de cookies ni de CORS con credenciales. Un token
+inventado (no emitido por `/session`) simplemente no valida y el pedido
+cae al comportamiento anterior (IP sola) — nunca rompe ni da más cupo del
+que corresponde.
+
+En Render, `req.ip` solo refleja la IP real del visitante si Express
+tiene `trust proxy` activado (ver `TRUST_PROXY`/`RENDER` en la tabla de
+variables de entorno); sin eso, el rate limit termina siendo el mismo
+cupo compartido por todo el mundo, porque `req.ip` siempre da la IP del
+proxy de Render. `ASK_MAX_CHARACTERS_POR_MINUTO` y
+`TTS_MAX_CHARACTERS_POR_MINUTO` agregan un techo aparte por volumen de
+texto acumulado (no solo cantidad de pedidos), también por clave
+IP+sesión.
 
 ### Configuración de Groq
 
@@ -553,11 +579,13 @@ documento, que tampoco se guarda.
 Dos tipos de pruebas conviven en este proyecto:
 
 - **Automatizadas** (`node --test`, sin dependencias de testing externas):
-  79 tests en `server/` (`npm test`: voz/Piper, seguridad SSRF+Turnstile,
-  timeouts/reintentos, e integración contra la app Express real) + 61 en
-  `worker/` (`npm test`) = **140 tests**, corridos en cada Pull Request y
-  push a `main` por `.github/workflows/ci.yml`. El detalle está en las
-  filas de auditoría de seguridad más abajo.
+  122 tests en `server/` (`npm test`: 36 de voz/Piper, 50 de seguridad
+  SSRF+Turnstile+sesión firmada+límite de caracteres, 9 de
+  timeouts/reintentos, 27 de integración contra la app Express real —
+  rate limiting, `/session`, `trust proxy`, Turnstile, caché de TTS) + 67
+  en `worker/` (`npm test`) = **189 tests**, corridos en cada Pull
+  Request y push a `main` por `.github/workflows/ci.yml`. El detalle
+  está en las filas de auditoría de seguridad más abajo.
 - **Manuales**, con Playwright real contra el frontend (sin framework de
   tests de UI automatizado en CI todavía — queda como mejora pendiente).
   Esta sección documenta cómo se probó cada funcionalidad la primera vez
