@@ -13,6 +13,13 @@ on:
 permissions:
   contents: read
 
+# Cancela una corrida vieja de CI para el mismo PR/rama en cuanto llega un
+# push nuevo -- evita gastar minutos de Actions corriendo tests sobre un
+# commit que ya quedó obsoleto.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     uses: ./.github/workflows/tests-reusable.yml

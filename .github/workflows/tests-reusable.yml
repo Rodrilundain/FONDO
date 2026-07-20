@@ -25,6 +25,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -51,3 +52,69 @@ jobs:
 
       - name: Frontend (js/) - correr tests de lógica sin DOM (privacidad de enlaces)
         run: npm test
+
+  # Chequeos básicos de seguridad (Punto 8 de la auditoría v2). A propósito
+  # NO se agrega ninguna Action nueva de terceros para esto (evita tener
+  # que fijar por SHA una dependencia que no se pudo verificar en vivo
+  # contra el registro real en este entorno de desarrollo, con acceso de
+  # red restringido a unos pocos dominios) -- todo corre con herramientas
+  # que ya vienen en el runner (node, python3+pyyaml, npm audit, grep).
+  security-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+
+      - name: Validar que los workflows de GitHub Actions sean YAML válido
+        run: |
+          set -eu
+          pip install --quiet --disable-pip-version-check pyyaml
+          python3 - <<'PY'
+          import sys, yaml, pathlib
+          errores = []
+          for ruta in sorted(pathlib.Path(".github/workflows").glob("*.yml")):
+              try:
+                  yaml.safe_load(ruta.read_text())
+              except yaml.YAMLError as e:
+                  errores.append(f"{ruta}: {e}")
+          if errores:
+              print("\n".join(errores))
+              sys.exit(1)
+          print(f"YAML válido en los {len(list(pathlib.Path('.github/workflows').glob('*.yml')))} workflows.")
+          PY
+
+      - name: Chequeo de sintaxis de todo el código JS (server/, worker/, js/)
+        run: |
+          set -eu
+          fail=0
+          while IFS= read -r -d '' f; do
+            node --check "$f" || fail=1
+          done < <(find server worker js -type f \( -name "*.js" -o -name "*.mjs" \) -not -path "*/node_modules/*" -print0)
+          exit $fail
+
+      - name: Escaneo básico de secretos (patrones comunes de claves/tokens)
+        run: |
+          set -eu
+          # No reemplaza una herramienta dedicada (gitleaks/trufflehog):
+          # cubre los patrones más comunes y reconocibles (AWS access key,
+          # bloques de clave privada PEM, tokens de Slack/GitHub/OpenAI-like)
+          # sin depender de una Action de terceros nueva sin verificar.
+          PATRON='AKIA[0-9A-Z]{16}|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|xox[baprs]-[0-9A-Za-z-]{10,}|gh[pousr]_[0-9A-Za-z]{36}|sk-[A-Za-z0-9]{20,}'
+          if grep -RInE "$PATRON" \
+              --exclude-dir=node_modules --exclude-dir=.git \
+              --exclude="*.env.example" .; then
+            echo "::error::Posible secreto encontrado en el repositorio (ver arriba)."
+            exit 1
+          fi
+          echo "Sin coincidencias de patrones de secretos conocidos."
+
+      - name: Auditoría de dependencias (server/)
+        working-directory: server
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Auditoría de dependencias (worker/)
+        working-directory: worker
+        run: npm audit --omit=dev --audit-level=high
