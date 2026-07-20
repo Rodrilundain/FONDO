@@ -6,6 +6,11 @@
 // entorno (ver providerConfig.js) -- la API valida la clave antes que el
 // modelo, asi que una clave invalida no permite distinguir "modelo
 // inexistente" de "clave invalida".
+//
+// La clave va en el encabezado "x-goog-api-key" (el estandar actual de la
+// documentacion oficial de Google), nunca en la URL como "?key=...": una
+// clave en la URL puede terminar en logs de acceso, historial del
+// navegador o herramientas de proxy/monitoreo que solo registran la URL.
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
 function errorProveedor(code, message, recuperable = false) {
@@ -16,7 +21,7 @@ export async function llamarGemini({ apiKey, model, systemInstruction, content, 
   if (!apiKey) return errorProveedor("SIN_API_KEY", "Gemini no esta configurado (falta GEMINI_API_KEY).", false);
   if (!model) return errorProveedor("SIN_MODELO", "Gemini no tiene un modelo configurado (GEMINI_MODEL).", false);
 
-  const url = `${GEMINI_BASE_URL}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const url = `${GEMINI_BASE_URL}/${encodeURIComponent(model)}:generateContent`;
   const body = {
     contents: [{ role: "user", parts: [{ text: `Documento:\n"""${content}"""` }] }],
     systemInstruction: { parts: [{ text: systemInstruction }] }
@@ -26,7 +31,7 @@ export async function llamarGemini({ apiKey, model, systemInstruction, content, 
   try {
     res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs)
     });

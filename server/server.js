@@ -3,10 +3,10 @@ import cors from "cors";
 import rateLimit from "express-rate-limit";
 import dotenv from "dotenv";
 import crypto from "node:crypto";
-import dns from "node:dns/promises";
 import path from "node:path";
 import { access } from "node:fs/promises";
 import { textToSpeech, vozLocalHabilitada, rutaDirectorioAudioPiper } from "./src/voice/voiceService.js";
+import { descargarConProteccionSsrf, SsrfBlockedError } from "./src/security/ssrf.js";
 dotenv.config();
 
 const app = express();
@@ -340,14 +340,11 @@ app.post("/tts", async (req, res) => {
 // mueve al backend para poder validar el destino y evitar SSRF (que la
 // URL apunte a una IP privada/localhost de la propia infraestructura).
 //
-// Límite conocido: se resuelve el DNS UNA vez para decidir si se permite,
-// pero el fetch posterior no fuerza esa misma IP (Node/undici no expone
-// fácil esa opción). Esto no protege contra un ataque de "DNS rebinding"
-// bien armado (un dominio que resuelve distinto entre el chequeo y el
-// pedido real). Para el caso de uso (compartir un link de un documento
-// propio) alcanza para bloquear los intentos obvios; no se lo puede
-// llamar una protección SSRF completa.
+// La protección SSRF en sí (protocolo, hostname, TODAS las IPs resueltas,
+// redirecciones seguidas a mano y revalidadas en cada salto) vive en
+// src/security/ssrf.js -- ver ese archivo y sus tests para el detalle.
 const MAX_FETCH_BYTES = 20 * 1024 * 1024; // 20 MB, igual que el límite del frontend
+const MAX_FETCH_REDIRECTS = 3;
 const limiterFetch = rateLimit({
   windowMs: 60 * 1000,
   max: 15,
@@ -357,57 +354,32 @@ const limiterFetch = rateLimit({
 });
 app.use(["/fetch-document"], limiterFetch);
 
-function ipEsPrivadaOReservada(ip) {
-  if (ip.includes(":")) {
-    // IPv6: loopback, link-local y ULA (fc00::/7).
-    const low = ip.toLowerCase();
-    return low === "::1" || low.startsWith("fe80:") || low.startsWith("fc") || low.startsWith("fd");
-  }
-  const partes = ip.split(".").map(Number);
-  if (partes.length !== 4 || partes.some(n => Number.isNaN(n))) return true; // formato raro: mejor bloquear
-  const [a, b] = partes;
-  if (a === 127) return true; // loopback
-  if (a === 10) return true; // privada
-  if (a === 172 && b >= 16 && b <= 31) return true; // privada
-  if (a === 192 && b === 168) return true; // privada
-  if (a === 169 && b === 254) return true; // link-local
-  if (a === 0) return true; // "esta red"
-  if (a >= 224) return true; // multicast/reservado
-  return false;
-}
-
 app.post("/fetch-document", async (req, res) => {
   const { url } = req.body || {};
   if (typeof url !== "string" || !url.trim()) {
     return res.status(400).json({ error: "Falta la URL del documento." });
   }
-  let parsed;
   try {
-    parsed = new URL(url);
+    new URL(url); // solo para dar un error claro de "URL inválida" antes de entrar a la protección SSRF
   } catch {
     return res.status(400).json({ error: "Esa URL no parece válida." });
   }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return res.status(400).json({ error: "Solo se admiten enlaces http:// o https://." });
-  }
-  if (/^(localhost|127\.|0\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.)/.test(parsed.hostname)) {
-    return res.status(400).json({ error: "Esa dirección no está permitida." });
-  }
+
+  let upstream, finalUrl;
   try {
-    const { address } = await dns.lookup(parsed.hostname);
-    if (ipEsPrivadaOReservada(address)) {
-      return res.status(400).json({ error: "Esa dirección no está permitida." });
+    ({ response: upstream, finalUrl } = await descargarConProteccionSsrf(url, {
+      maxRedirects: MAX_FETCH_REDIRECTS,
+      timeoutMs: 20000
+    }));
+  } catch (error) {
+    if (error instanceof SsrfBlockedError) {
+      return res.status(400).json({ error: error.message });
     }
-  } catch {
-    return res.status(400).json({ error: "No se pudo resolver ese dominio." });
+    console.error("Error en /fetch-document:", error.message);
+    return res.status(502).json({ error: "No se pudo descargar ese enlace." });
   }
 
   try {
-    const upstream = await fetch(parsed.toString(), {
-      redirect: "follow",
-      signal: AbortSignal.timeout(20000),
-      headers: { "User-Agent": "MedusaLee-fetch-document/1.0" }
-    });
     if (!upstream.ok) {
       return res.status(upstream.status).json({ error: `El servidor de origen respondió ${upstream.status}.` });
     }
@@ -437,7 +409,7 @@ app.post("/fetch-document", async (req, res) => {
     }
     const buffer = Buffer.concat(partes.map(p => Buffer.from(p)));
     res.set("Content-Type", contentType);
-    res.set("X-Original-Url", parsed.toString());
+    res.set("X-Original-Url", finalUrl);
     res.send(buffer);
     // No se guarda nada del contenido después de responder: no hay
     // escritura a disco ni log del cuerpo del documento.
