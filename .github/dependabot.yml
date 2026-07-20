@@ -1,8 +1,18 @@
-# Dependabot (Etapa 4 de la auditoría de seguridad): abre Pull Requests
-# automáticos cuando hay actualizaciones de dependencias npm o de las
-# GitHub Actions usadas en los workflows. No aplica nada solo -- cada
-# actualización llega como PR normal, pasa por el mismo CI (tests.yml)
-# antes de poder mergearse.
+# Dependabot (Etapa 4 de la auditoría de seguridad, ampliado en el Punto
+# 10 de la auditoría v2): abre Pull Requests automáticos cuando hay
+# actualizaciones de dependencias npm, de la imagen base de Docker, o de
+# las GitHub Actions usadas en los workflows. No aplica NADA solo -- cada
+# actualización llega como Pull Request normal, pasa por el mismo CI
+# (tests-reusable.yml, incluido security-checks) antes de poder
+# mergearse, y no hay ningún workflow de auto-merge configurado en este
+# repositorio: todo Pull Request de Dependabot -- sea de un patch o de un
+# major -- requiere revisión y merge manual de una persona.
+#
+# Los updates de tipo "minor"/"patch" se agrupan en un único Pull Request
+# por ecosistema (menos ruido para cambios de bajo riesgo); los "major"
+# quedan afuera del grupo a propósito, así cada uno llega en su propio
+# Pull Request bien visible para revisar con más cuidado (un cambio de
+# versión mayor puede traer cambios incompatibles).
 
 version: 2
 updates:
@@ -12,6 +22,11 @@ updates:
       interval: weekly
     commit-message:
       prefix: "deps(server)"
+    groups:
+      server-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: npm
     directory: /worker
@@ -19,6 +34,11 @@ updates:
       interval: weekly
     commit-message:
       prefix: "deps(worker)"
+    groups:
+      worker-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: github-actions
     directory: /
@@ -26,3 +46,20 @@ updates:
       interval: weekly
     commit-message:
       prefix: "deps(actions)"
+    groups:
+      actions-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: docker
+    directory: /server
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "deps(docker)"
+    groups:
+      docker-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
