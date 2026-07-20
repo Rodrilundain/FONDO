@@ -11,7 +11,20 @@ import { verificarTurnstile } from "./src/security/turnstile.js";
 import { fetchConReintentos } from "./src/net/httpRetry.js";
 import { generarSesionFirmada, verificarSesionFirmada } from "./src/security/sesionFirmada.js";
 import { crearLimitadorDeCaracteres } from "./src/security/limitadorCaracteres.js";
+import { crearCacheTts } from "./src/tts/ttsCache.js";
 dotenv.config();
+
+// `Number(process.env.X) || porDefecto` tiene un bug real con "0" como
+// valor explícito: 0 es falsy en JS, así que "0" (una cantidad válida,
+// por ejemplo "0 reintentos" o "0 = sin expiración") terminaba
+// pisándose en silencio por el default en vez de respetarse. Detectado
+// mientras se probaba la deduplicación de /tts (Punto 6 de la auditoría
+// v2) con ELEVENLABS_MAX_RETRIES="0": el 0 nunca se aplicaba de verdad.
+function numeroODefecto(valor, porDefecto) {
+  if (valor === undefined || valor === "") return porDefecto;
+  const n = Number(valor);
+  return Number.isFinite(n) ? n : porDefecto;
+}
 
 const app = express();
 
@@ -217,9 +230,9 @@ const MAX_TTS_LEN = 2000;
 // Configurables por si el plan gratuito de alguno de los dos proveedores
 // necesita márgenes distintos.
 const GROQ_TIMEOUT_MS = Number(process.env.GROQ_TIMEOUT_MS) || 20000;
-const GROQ_MAX_RETRIES = Number(process.env.GROQ_MAX_RETRIES) || 2;
+const GROQ_MAX_RETRIES = numeroODefecto(process.env.GROQ_MAX_RETRIES, 2);
 const ELEVENLABS_TIMEOUT_MS = Number(process.env.ELEVENLABS_TIMEOUT_MS) || 20000;
-const ELEVENLABS_MAX_RETRIES = Number(process.env.ELEVENLABS_MAX_RETRIES) || 2;
+const ELEVENLABS_MAX_RETRIES = numeroODefecto(process.env.ELEVENLABS_MAX_RETRIES, 2);
 
 function esTextoValido(valor, maxLen) {
   return typeof valor === "string" && valor.trim().length > 0 && valor.length <= maxLen;
@@ -359,10 +372,17 @@ function voiceSettingsPara(modelo) {
 
 // Caché en memoria por hash(texto+voz+modelo+ajustes): repetir el mismo
 // fragmento (por ejemplo al volver atrás en la lectura) no vuelve a
-// consumir cuota. Se limita la cantidad de entradas para no crecer sin
-// límite en la memoria del proceso (no hay Redis ni disco persistente).
-const TTS_CACHE_MAX_ENTRADAS = 120;
-const ttsCache = new Map(); // hash -> Buffer
+// consumir cuota. Límites de entradas, bytes totales y expiración (TTL)
+// en src/tts/ttsCache.js (Punto 6 de la auditoría v2).
+const TTS_CACHE_MAX_ENTRADAS = Number(process.env.TTS_CACHE_MAX_ENTRADAS) || 120;
+const TTS_CACHE_MAX_BYTES = Number(process.env.TTS_CACHE_MAX_BYTES) || 50 * 1024 * 1024;
+const TTS_CACHE_TTL_MS = numeroODefecto(process.env.TTS_CACHE_TTL_MS, 24 * 60 * 60 * 1000);
+const ttsCache = crearCacheTts({ maxEntradas: TTS_CACHE_MAX_ENTRADAS, maxBytesTotal: TTS_CACHE_MAX_BYTES, ttlMs: TTS_CACHE_TTL_MS });
+
+// Un audio de menos de esto casi seguro no es un MP3 válido (encabezado +
+// algo de contenido real) -- no tiene sentido cachearlo ni servirlo como
+// si fuera una respuesta buena.
+const TTS_MIN_BYTES_VALIDOS = 100;
 
 function hashTts(text, voiceId, modelo, settings) {
   return crypto.createHash("sha256")
@@ -370,12 +390,41 @@ function hashTts(text, voiceId, modelo, settings) {
     .update(JSON.stringify(settings))
     .digest("hex");
 }
-function cacheGuardar(hash, buffer) {
-  if (ttsCache.size >= TTS_CACHE_MAX_ENTRADAS) {
-    const primerClave = ttsCache.keys().next().value;
-    ttsCache.delete(primerClave);
+
+// Deduplicación de solicitudes concurrentes idénticas (Punto 6 de la
+// auditoría v2): si dos pedidos con el mismo hash (mismo texto+voz+
+// modelo+ajustes) llegan mientras el primero todavía está esperando la
+// respuesta de ElevenLabs, el segundo se "engancha" a la MISMA promesa en
+// vez de disparar una segunda llamada real -- evita gastar cuota (y
+// plata) dos veces por el mismo fragmento pedido al mismo tiempo (por
+// ejemplo, dos pestañas leyendo el mismo documento, o un reintento del
+// cliente antes de que responda el primer pedido).
+const ttsGeneracionesEnCurso = new Map(); // hash -> Promise<Buffer>
+
+async function generarAudioElevenLabs(text, voiceId, modelo) {
+  let ttsRes = await llamarElevenLabs(text, voiceId, modelo);
+  // Si el modelo pedido falla (por ejemplo un modelo experimental que la
+  // cuenta no tiene habilitado), se reintenta una vez con el modelo de
+  // respaldo estable, en vez de simplemente fallar.
+  if (!ttsRes.ok && modelo !== MODELO_RESPALDO) {
+    console.warn(`/tts: modelo ${modelo} falló (${ttsRes.status}), reintentando con ${MODELO_RESPALDO}`);
+    ttsRes = await llamarElevenLabs(text, voiceId, MODELO_RESPALDO);
   }
-  ttsCache.set(hash, buffer);
+  if (!ttsRes.ok) {
+    const detalle = await ttsRes.text();
+    const error = new Error("elevenlabs_error");
+    error.status = ttsRes.status;
+    error.detalle = detalle;
+    throw error;
+  }
+  const buffer = Buffer.from(await ttsRes.arrayBuffer());
+  if (buffer.length < TTS_MIN_BYTES_VALIDOS) {
+    const error = new Error("audio_invalido");
+    error.status = 502;
+    error.detalle = `ElevenLabs devolvió ${buffer.length} bytes, no parece un audio válido.`;
+    throw error;
+  }
+  return buffer;
 }
 
 // GET /tts/voices — informa qué voces IA hay disponibles (hombre/mujer) y
@@ -430,49 +479,48 @@ app.post("/tts", async (req, res) => {
     });
   }
 
-  // Orden importante (Etapa 3 de la auditoría de seguridad): primero se
-  // calcula el hash y se revisa la caché, y SOLO si no hay nada cacheado
-  // se chequea (y consume) el límite diario, justo antes de llamar de
-  // verdad a ElevenLabs. Antes, ttsDentroDeLimiteDiario() se llamaba
-  // ANTES de revisar la caché, así que un pedido que terminaba
-  // sirviéndose desde caché igual gastaba una unidad del límite diario —
-  // el límite debe reflejar llamadas reales al proveedor, no
-  // reproducciones repetidas de algo ya generado.
+  // Orden importante (Etapa 3 de la auditoría de seguridad, ampliado en
+  // el Punto 6 de la v2): primero se calcula el hash y se revisa la
+  // caché; si no hay nada cacheado, se revisa si ya hay una generación
+  // en curso para el MISMO hash (deduplicación) y si la hay, este pedido
+  // se engancha a esa promesa en vez de llamar de nuevo a ElevenLabs; y
+  // SOLO si hace falta arrancar una generación nueva se chequea (y
+  // consume) el límite diario, justo antes de la llamada real. El límite
+  // diario debe reflejar llamadas reales al proveedor, no reproducciones
+  // repetidas de algo ya generado ni pedidos concurrentes idénticos.
   const modelo = modeloPedido || (contexto === "documento" ? MODELO_DOCUMENTO : MODELO_CHAT);
   const settings = voiceSettingsPara(modelo);
   const hash = hashTts(text, voiceId, modelo, settings);
-  const cacheado = ttsCache.get(hash);
+  const cacheado = ttsCache.obtener(hash);
   if (cacheado) {
     res.set("Content-Type", "audio/mpeg");
     res.set("X-Tts-Cache", "hit");
     return res.send(cacheado);
   }
 
-  if (!ttsDentroDeLimiteDiario()) {
-    return res.status(429).json({ error: "Se alcanzó el límite diario de voz IA configurado en el backend. Probá de nuevo mañana, o usá la voz del dispositivo.", codigo: "limite_diario" });
+  let promesa = ttsGeneracionesEnCurso.get(hash);
+  let seEsperaba = Boolean(promesa);
+  if (!promesa) {
+    if (!ttsDentroDeLimiteDiario()) {
+      return res.status(429).json({ error: "Se alcanzó el límite diario de voz IA configurado en el backend. Probá de nuevo mañana, o usá la voz del dispositivo.", codigo: "limite_diario" });
+    }
+    promesa = generarAudioElevenLabs(text, voiceId, modelo).finally(() => ttsGeneracionesEnCurso.delete(hash));
+    ttsGeneracionesEnCurso.set(hash, promesa);
   }
 
   try {
-    let ttsRes = await llamarElevenLabs(text, voiceId, modelo);
-    // Si el modelo pedido falla (por ejemplo un modelo experimental que la
-    // cuenta no tiene habilitado), se reintenta una vez con el modelo de
-    // respaldo estable, en vez de simplemente fallar.
-    if (!ttsRes.ok && modelo !== MODELO_RESPALDO) {
-      console.warn(`/tts: modelo ${modelo} falló (${ttsRes.status}), reintentando con ${MODELO_RESPALDO}`);
-      ttsRes = await llamarElevenLabs(text, voiceId, MODELO_RESPALDO);
-    }
-    if (!ttsRes.ok) {
-      const detalle = await ttsRes.text();
-      // No se loguea el texto que se intentó convertir, solo el resultado.
-      console.error(`/tts falló: ${ttsRes.status} ${detalle.slice(0, 200)}`);
-      return res.status(ttsRes.status).json({ error: "ElevenLabs no pudo generar el audio.", codigo: "elevenlabs_error" });
-    }
-    const buffer = Buffer.from(await ttsRes.arrayBuffer());
-    cacheGuardar(hash, buffer);
+    const buffer = await promesa;
+    if (!seEsperaba) ttsCache.guardar(hash, buffer); // solo quien disparó la llamada real cachea (evita guardar N veces lo mismo)
     res.set("Content-Type", "audio/mpeg");
     res.set("X-Tts-Cache", "miss");
+    if (seEsperaba) res.set("X-Tts-Dedupe", "si");
     res.send(buffer);
   } catch (error) {
+    if (error.status) {
+      // No se loguea el texto que se intentó convertir, solo el resultado.
+      console.error(`/tts falló: ${error.status} ${(error.detalle || "").slice(0, 200)}`);
+      return res.status(error.status).json({ error: "ElevenLabs no pudo generar el audio.", codigo: "elevenlabs_error" });
+    }
     console.error("Error en /tts:", error.message);
     res.status(500).json({ error: "Error interno al conectar con ElevenLabs." });
   }

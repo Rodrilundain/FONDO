@@ -27,7 +27,10 @@ before(() => new Promise((resolve) => {
     return {
       ok: true,
       status: 200,
-      arrayBuffer: async () => new TextEncoder().encode("audio-falso-mp3").buffer,
+      // >= TTS_MIN_BYTES_VALIDOS (server.js): un audio real siempre pesa
+      // bastante más que unos pocos bytes, así que el backend rechaza
+      // como inválido cualquier respuesta más chica que eso.
+      arrayBuffer: async () => new TextEncoder().encode("audio-falso-mp3-".repeat(10)).buffer,
       text: async () => ""
     };
   };
