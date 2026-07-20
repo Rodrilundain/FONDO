@@ -105,6 +105,10 @@
         <div class="status">Si quien administra este backend activó Turnstile, pegá acá la clave pública que te dio (no es secreta). Sin esto, y con Turnstile desactivado del lado del servidor, MedusaLee sigue funcionando igual.</div>
         <div id="turnstileContenedor" hidden></div>
       </div>
+      <div class="url-box">
+        <label><input type="checkbox" id="proxiesPublicosDeshabilitadosInput"> 🔒 No usar nunca servicios externos (proxies) para cargar documentos por enlace</label>
+        <div class="status">Si el backend no puede descargar un enlace, MedusaLee puede ofrecerte probar con un servicio externo (r.jina.ai, corsproxy.io o allorigins.win) — eso comparte esa URL con ese tercero. Con esta opción activada, nunca se ofrece ni se usa ninguno: si el backend falla, la carga del enlace simplemente falla con un aviso claro.</div>
+      </div>
     </details>
 
     <div class="menu-footer">

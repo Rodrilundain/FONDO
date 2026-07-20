@@ -115,7 +115,7 @@ const CLAVES_PREFERENCIAS_VOZ = [
 ];
 const CLAVES_PREFERENCIAS = [
   "medusaBackendUrl", "medusaColor", "medusaAutoColor", "medusaAnimActiva",
-  "medusaTurnstileSiteKey",
+  "medusaTurnstileSiteKey", "medusaProxiesPublicosDeshabilitados",
   ...CLAVES_PREFERENCIAS_VOZ
 ];
 if (restaurarConfigBtn) {
