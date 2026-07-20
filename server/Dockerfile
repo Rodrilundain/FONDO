@@ -39,7 +39,7 @@
 # intérprete de Python de ambas etapas es exactamente el mismo build --
 # la venv armada acá (con pip/venv presentes) sigue siendo utilizable en
 # la etapa final (con solo el intérprete, sin pip/venv).
-FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS piper-builder
+FROM node:26-slim@sha256:715e55e4b84e4bb0ff48e49b398a848f08e55daed8eb6a0ea1839ae53bc57583 AS piper-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       python3 \
@@ -69,7 +69,7 @@ RUN mkdir -p /app/models/piper \
          || echo "ADVERTENCIA DE BUILD: no se pudo descargar la voz '${PIPER_VOICE_NAME}'. Piper va a quedar sin modelo configurado (MedusaLee sigue funcionando igual, sin esa voz). Ver server/src/voice/README.md." )
 
 # ---- Etapa final: solo lo que hace falta para CORRER, no para instalar ----
-FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+FROM node:26-slim@sha256:715e55e4b84e4bb0ff48e49b398a848f08e55daed8eb6a0ea1839ae53bc57583
 
 # Solo el intérprete de Python para EJECUTAR Piper -- pip y venv (que sí
 # hacían falta para instalarlo) no viajan a la imagen final. Una venv ya
