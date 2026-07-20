@@ -1,12 +1,19 @@
 services:
   - type: web
     name: medusa-backend
-    runtime: node
+    runtime: docker
     plan: free
     rootDir: server
-    buildCommand: npm install
-    startCommand: npm start
+    dockerfilePath: Dockerfile
+    dockerContext: .
     envVars:
+      # Activa Piper (voz local es_AR) en este servicio. Solo tiene efecto
+      # acá porque este servicio usa runtime: docker, que instala Python +
+      # Piper durante el build (ver server/Dockerfile). El resto de las
+      # variables PIPER_* (ejecutable, modelo, carpeta de salida) ya vienen
+      # fijadas dentro de la imagen — no hace falta repetirlas acá.
+      - key: TTS_ENABLED
+        value: "true"
       # GROQ_API_KEY: no se pega acá en el archivo. Con "sync: false", Render
       # muestra un campo de texto vacío para esta variable durante el deploy
       # (en la página del botón "Deploy to Render") — es ahí, en esa página
@@ -54,12 +61,13 @@ services:
       # de GitHub Pages y localhost.
       - key: ALLOWED_ORIGIN
         sync: false
-      # NOTA sobre la voz local con Piper (TTS_ENABLED/PIPER_*, ver
-      # server/src/voice/README.md): a propósito NO se agrega acá como
-      # variable de Render. Este servicio usa runtime: node y
-      # buildCommand: npm install — no instala Python ni descarga ningún
-      # modelo de voz durante el deploy, así que activar TTS_ENABLED en
-      # este servicio tal como está configurado hoy no serviría de nada
-      # (Piper no estaría instalado). Piper es para correr MedusaLee
-      # localmente o en un servidor propio con Python disponible, no para
-      # este deploy gratuito en Render.
+      # NOTA sobre la voz local con Piper: hasta acá este servicio usaba
+      # runtime: node (sin Python), así que TTS_ENABLED no servía de nada
+      # en Render. Ahora usa runtime: docker (ver server/Dockerfile), que
+      # instala Python + Piper durante el build y descarga la voz es_AR
+      # por defecto — por eso TTS_ENABLED ya está en "true" arriba. Si
+      # el build de Render no logra descargar el modelo de voz (por
+      # ejemplo si no llega a huggingface.co), Piper queda sin voz
+      # configurada pero el resto de MedusaLee sigue funcionando igual;
+      # revisá el log de build. Ver server/src/voice/README.md para más
+      # detalle y para correrlo en otro servidor propio si hiciera falta.
