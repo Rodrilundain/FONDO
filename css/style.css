@@ -466,6 +466,65 @@ a.btn-stop {
   font-style: italic;
   margin-top: 6px;
 }
+
+/* Funciones de IA (Cloudflare Worker: Gemini/OpenRouter) */
+.ia-funciones-panel {
+  width: 100%;
+  background: rgba(125,202,255,0.08);
+  border: 1px solid rgba(125,202,255,0.3);
+  border-radius: 14px;
+  padding: 12px;
+  text-align: left;
+  margin-top: 4px;
+}
+.ia-funciones-titulo {
+  font-size: 0.92em;
+  font-weight: 600;
+  color: #eaf6ff;
+  margin-bottom: 8px;
+  text-align: center;
+}
+.ia-funciones-label {
+  display: block;
+  font-size: 0.78em;
+  color: #9cdcff;
+  margin-bottom: 4px;
+}
+.ia-funciones-panel select,
+.ia-funciones-panel input[type="text"] {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px;
+  border-radius: 8px;
+  border: none;
+  background: #0a1724;
+  color: #7dcaff;
+  font-size: 0.85em;
+  font-family: inherit;
+  outline: none;
+  margin-bottom: 8px;
+}
+.ia-funciones-resultado {
+  margin-top: 10px;
+  border-top: 1px solid rgba(125,202,255,0.25);
+  padding-top: 10px;
+}
+.ia-funciones-proveedor {
+  font-size: 0.72em;
+  color: #9cdcff;
+  opacity: 0.85;
+  margin-bottom: 6px;
+}
+.ia-funciones-texto {
+  font-size: 0.85em;
+  line-height: 1.5;
+  color: #cde9ff;
+  white-space: pre-wrap;
+  max-height: 40vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .menu-footer {
   display: flex;
   flex-wrap: wrap;

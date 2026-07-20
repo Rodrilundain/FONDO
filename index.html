@@ -93,6 +93,12 @@
         <div class="status" id="backendStatus"></div>
         <div class="status" id="backendConnStatus" role="status" aria-live="polite">⚪ Backend: sin verificar</div>
       </div>
+      <div class="url-box">
+        <label for="workerUrlInput">🤖 Worker de IA (Cloudflare, opcional — Gemini/OpenRouter)</label>
+        <input type="text" id="workerUrlInput" placeholder="https://tu-worker.workers.dev">
+        <div class="status">Función adicional aparte del chat: resúmenes, preguntas de estudio, conceptos clave y más. Sin configurar esto, MedusaLee sigue funcionando exactamente igual.</div>
+        <div class="status" id="workerConnStatus" role="status" aria-live="polite">⚪ Worker de IA: no configurado</div>
+      </div>
     </details>
 
     <div class="menu-footer">
@@ -163,6 +169,41 @@
       </div>
       <div class="documento-vista-texto" id="documentoVistaTexto" role="region" aria-label="Texto del documento con el fragmento actual resaltado"></div>
     </div>
+
+    <!-- Funciones de IA vía Cloudflare Worker (Gemini/OpenRouter): opcional,
+         aparte del chat de preguntas de siempre. Solo aparece si se
+         configuró la URL del Worker en el menú y hay un documento cargado. -->
+    <div class="ia-funciones-panel" id="iaFuncionesPanel" hidden>
+      <div class="ia-funciones-titulo">🧪 Funciones de IA (opcional)</div>
+      <label for="iaFuncionesTarea" class="ia-funciones-label">Elegí una función</label>
+      <select id="iaFuncionesTarea">
+        <option value="summary">📝 Resumir documento</option>
+        <option value="explain_simple">💡 Explicar en lenguaje sencillo</option>
+        <option value="qa">❓ Hacer una pregunta</option>
+        <option value="chat">💬 Conversar sobre el documento</option>
+        <option value="study_questions">📚 Preguntas de estudio</option>
+        <option value="multiple_choice">🔤 Preguntas de opción múltiple</option>
+        <option value="key_concepts">🔑 Conceptos importantes</option>
+        <option value="study_guide">🗂️ Guía de estudio</option>
+        <option value="extract_data">📅 Extraer fechas, nombres y datos</option>
+        <option value="section_explanation">📖 Explicación por secciones</option>
+      </select>
+      <div id="iaFuncionesPreguntaRow" hidden>
+        <input type="text" id="iaFuncionesPregunta" placeholder="Escribí tu pregunta..." aria-label="Tu pregunta para esta función">
+      </div>
+      <button type="button" id="iaFuncionesGenerarBtn" class="btn-stop">✨ Generar</button>
+      <div class="status" id="iaFuncionesEstado" role="status" aria-live="polite"></div>
+      <div class="ia-funciones-resultado" id="iaFuncionesResultado" hidden>
+        <div class="ia-funciones-proveedor" id="iaFuncionesProveedor"></div>
+        <div class="ia-funciones-texto" id="iaFuncionesTexto"></div>
+        <div class="btn-row">
+          <button type="button" id="iaFuncionesEscucharBtn" class="btn-stop" aria-label="Escuchar esta respuesta">🔊 Escuchar</button>
+          <button type="button" id="iaFuncionesPausarBtn" class="btn-stop" aria-label="Pausar o reanudar" aria-pressed="false">⏸️ Pausar</button>
+          <button type="button" id="iaFuncionesDetenerBtn" class="btn-stop btn-detener" aria-label="Detener inmediatamente">🔇 Detener</button>
+          <button type="button" id="iaFuncionesCopiarBtn" class="btn-stop">📋 Copiar</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Chat -->
@@ -184,6 +225,7 @@
   <script src="js/voz.js"></script>
   <script src="js/documentos.js"></script>
   <script src="js/chat.js"></script>
+  <script src="js/aiWorker.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

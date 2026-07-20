@@ -109,6 +109,8 @@ js/animacion.js     Canvas: la medusa animada, color manual/automático
 js/voz.js           Voz del navegador + voz de IA (ElevenLabs), reproducción
 js/documentos.js    Carga, validación y extracción de texto de documentos
 js/chat.js          Preguntas al backend, RAG simple, UI del chat
+js/aiWorker.js      Funciones de IA adicionales vía el Worker de
+                    Cloudflare (opcional, ver worker/)
 js/app.js           Menú, configuración del backend, arranque general
 server/server.js    Backend Express: /ask (Groq), /tts y /tts/voices
                     (ElevenLabs), /fetch-document (proxy de URLs),
@@ -144,6 +146,28 @@ Cloudflare, no en Render ni en GitHub Pages.
 - [Piper](https://github.com/OHF-Voice/piper1-gpl) (opcional, GPL-3.0)
   para una voz de IA que corre local, en el propio servidor, sin costo ni
   cuota — ver `server/src/voice/README.md`.
+- [Gemini](https://ai.google.dev/) y [OpenRouter](https://openrouter.ai/)
+  (ambos opcionales) para funciones de IA adicionales vía un Cloudflare
+  Worker propio — ver `worker/README.md`.
+
+## Funciones de IA adicionales (Gemini/OpenRouter, opcional)
+
+Aparte del chat de preguntas de siempre (que sigue usando Groq sin ningún
+cambio), MedusaLee puede conectarse a un [Cloudflare Worker propio](worker/README.md)
+que ofrece 10 funciones más sobre el documento cargado: resumir,
+explicar en lenguaje sencillo, preguntas de estudio, preguntas de opción
+múltiple, conceptos importantes, guía de estudio, extracción de fechas y
+datos, explicación por secciones, y conversación libre sobre el
+documento. El Worker llama a Gemini como proveedor principal y a
+OpenRouter como respaldo automático si Gemini falla — nunca expone
+ninguna clave al navegador.
+
+Es 100% opcional: sin configurar la URL del Worker en el menú (☰ → ⚙️
+Configuración avanzada → "Worker de IA"), esta sección queda oculta y
+MedusaLee funciona exactamente igual que siempre. Instrucciones
+completas de despliegue del Worker (con qué se verificó de verdad y qué
+no se pudo verificar en este entorno) en
+[`worker/README.md`](worker/README.md).
 
 ## Voz local con Piper (motor opcional, gratis, sin cuota)
 
@@ -419,10 +443,17 @@ local). Exactamente esto sale del dispositivo, y a dónde:
   procesar esa solicitud. Si el backend no puede resolver la URL (poco
   común), se cae a proxies públicos de terceros como respaldo (ver
   "Limitaciones conocidas").
+- **Si usás alguna de las "Funciones de IA" del panel opcional** (resumen,
+  preguntas de estudio, conceptos clave, etc.): el documento (o, para
+  documentos muy largos, sus fragmentos) viaja al Cloudflare Worker
+  propio y de ahí a **Gemini** (y a **OpenRouter** si Gemini falla), para
+  generar la respuesta. Es una función aparte del chat de siempre, y solo
+  se activa si vos mismo configurás la URL del Worker en el menú.
 
 En ningún caso se recomienda cargar documentos confidenciales si no
-querés que ese contenido (o fragmentos de él) se envíe a Groq y/o
-ElevenLabs. MedusaLee no guarda documentos ni conversaciones en ningún
+querés que ese contenido (o fragmentos de él) se envíe a Groq, ElevenLabs
+y/o (si usás las funciones de IA opcionales) Gemini/OpenRouter. MedusaLee
+no guarda documentos ni conversaciones en ningún
 servidor — ni el propio ni los de terceros: se procesan al vuelo para
 responder esa solicitud puntual. El backend tampoco registra en sus logs
 el texto completo de preguntas ni de lecturas, para minimizar qué queda
@@ -506,6 +537,9 @@ pendiente). Esta ronda se probó manualmente así:
 | Voz local Piper: motor desactivado (`TTS_ENABLED` sin definir) | Servidor Express real, `/health` y `POST /voice/piper` | `/health` informa `vozLocalConfigurada:false`; el endpoint devuelve 404 con `success:false` sin intentar ejecutar Piper; `/ask` sigue funcionando exactamente igual que antes (sin regresión) |
 | Voz local Piper: endpoint completo con el ejemplo del enunciado ("Hola, Rodrigo. El sistema está funcionando correctamente.") | Servidor Express real, `POST /voice/piper` + descarga del audio vía `GET /voice/piper/audio/:nombre` | Genera el `.wav`, lo sirve con `Content-Type: audio/wav` y bytes RIFF válidos; intento de path traversal en el nombre de archivo (`../../server.js`) rechazado con 400 |
 | Voz local Piper: fallo de escritura por permisos | No se pudo forzar un error real de permisos porque este entorno corre como root (root ignora los bits de permisos de archivo en Linux) | **No verificado con un fallo de permisos real** — el camino de manejo de errores es el mismo `try/catch` ya probado para "modelo inexistente"/"Piper no instalado" (cualquier excepción de `mkdir`/`spawn` se traduce a `success:false` sin crashear), pero no se pudo confirmar específicamente ese escenario |
+| Worker de IA (Gemini/OpenRouter): 44 casos (validación, CORS, rate limit, caché, fallback, resumen de documentos largos, fetch handler completo) | `npm test` en `worker/` (node:test) + `wrangler dev --local` real, incluida una llamada real a la API de Gemini con clave inválida | Los 44 tests pasan; verificado en vivo que el Worker corre en el runtime real de Cloudflare (`workerd`), responde `/health`, aplica CORS solo al origen permitido, respeta el límite de 20 solicitudes/minuto (20 pasan, la 21ª da 429), y sirve la segunda solicitud idéntica desde caché sin volver a llamar al proveedor — detalle completo en `worker/README.md` |
+| Panel "Funciones de IA" en la interfaz: oculto sin Worker configurado, visible con Worker+documento, selector de pregunta según la tarea, generación exitosa, error amigable (sin códigos HTTP ni stack traces), doble clic no duplica la solicitud, escuchar/pausar/detener no rompen nada | Playwright contra el servidor local, con `/api/generate` mockeado (éxito y error) | Todos los casos correctos; verificado en particular que el texto generado se inserta con `textContent` y nunca se ejecuta como HTML (una respuesta con `<script>` inyectado no corre el script, confirmado revisando `window.__inyectado`) |
+| Regresión: motor de lectura IA, experiencia de lectura (página/tiempo restante/resaltado/continuar/TOC), backend de voz local | Se re-corrieron los tests de rondas anteriores tras agregar el panel de IA | Sin cambios de comportamiento — el panel nuevo no modifica ningún archivo de los que esas pruebas cubren salvo agregados aditivos |
 
 No se fabricó ningún resultado: donde no se pudo ejecutar la prueba real
 (PDF/DOCX real, voces de síntesis del navegador, calidad real de una voz
