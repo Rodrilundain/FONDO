@@ -5,9 +5,10 @@ import dotenv from "dotenv";
 import crypto from "node:crypto";
 import path from "node:path";
 import { access } from "node:fs/promises";
-import { textToSpeech, vozLocalHabilitada, rutaDirectorioAudioPiper } from "./src/voice/voiceService.js";
+import { textToSpeech, estadoVozLocal, rutaDirectorioAudioPiper } from "./src/voice/voiceService.js";
 import { descargarConProteccionSsrf, SsrfBlockedError } from "./src/security/ssrf.js";
 import { verificarTurnstile } from "./src/security/turnstile.js";
+import { fetchConReintentos } from "./src/net/httpRetry.js";
 dotenv.config();
 
 const app = express();
@@ -113,6 +114,15 @@ const MAX_QUESTION_LEN = 500;
 const MAX_CONTEXT_LEN = 12000;
 const MAX_TTS_LEN = 2000;
 
+// Timeout + reintentos (Etapa 3 de la auditoría de seguridad) para las
+// llamadas salientes a Groq y ElevenLabs -- ver src/net/httpRetry.js.
+// Configurables por si el plan gratuito de alguno de los dos proveedores
+// necesita márgenes distintos.
+const GROQ_TIMEOUT_MS = Number(process.env.GROQ_TIMEOUT_MS) || 20000;
+const GROQ_MAX_RETRIES = Number(process.env.GROQ_MAX_RETRIES) || 2;
+const ELEVENLABS_TIMEOUT_MS = Number(process.env.ELEVENLABS_TIMEOUT_MS) || 20000;
+const ELEVENLABS_MAX_RETRIES = Number(process.env.ELEVENLABS_MAX_RETRIES) || 2;
+
 function esTextoValido(valor, maxLen) {
   return typeof valor === "string" && valor.trim().length > 0 && valor.length <= maxLen;
 }
@@ -147,7 +157,7 @@ app.post("/ask", async (req, res) => {
   const objetivoTexto = typeof objetivo === "string" ? OBJETIVOS_VALIDOS[objetivo] : null;
 
   try {
-    const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    const groqRes = await fetchConReintentos("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -191,7 +201,7 @@ app.post("/ask", async (req, res) => {
         ],
         temperature: 0.3
       })
-    });
+    }, { timeoutMs: GROQ_TIMEOUT_MS, maxRetries: GROQ_MAX_RETRIES });
     const data = await groqRes.json();
     if (!groqRes.ok) {
       // Un error de Groq (clave inválida, rate limit, etc.) no es una
@@ -286,7 +296,7 @@ app.get("/tts/voices", (_req, res) => {
 
 async function llamarElevenLabs(text, voiceId, modelo) {
   const settings = voiceSettingsPara(modelo);
-  const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+  const ttsRes = await fetchConReintentos(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -296,7 +306,7 @@ async function llamarElevenLabs(text, voiceId, modelo) {
       "xi-api-key": process.env.ELEVENLABS_API_KEY
     },
     body: JSON.stringify({ text, model_id: modelo, voice_settings: settings })
-  });
+  }, { timeoutMs: ELEVENLABS_TIMEOUT_MS, maxRetries: ELEVENLABS_MAX_RETRIES });
   return ttsRes;
 }
 
@@ -321,10 +331,15 @@ app.post("/tts", async (req, res) => {
       codigo: "falta_voz_espanol"
     });
   }
-  if (!ttsDentroDeLimiteDiario()) {
-    return res.status(429).json({ error: "Se alcanzó el límite diario de voz IA configurado en el backend. Probá de nuevo mañana, o usá la voz del dispositivo.", codigo: "limite_diario" });
-  }
 
+  // Orden importante (Etapa 3 de la auditoría de seguridad): primero se
+  // calcula el hash y se revisa la caché, y SOLO si no hay nada cacheado
+  // se chequea (y consume) el límite diario, justo antes de llamar de
+  // verdad a ElevenLabs. Antes, ttsDentroDeLimiteDiario() se llamaba
+  // ANTES de revisar la caché, así que un pedido que terminaba
+  // sirviéndose desde caché igual gastaba una unidad del límite diario —
+  // el límite debe reflejar llamadas reales al proveedor, no
+  // reproducciones repetidas de algo ya generado.
   const modelo = modeloPedido || (contexto === "documento" ? MODELO_DOCUMENTO : MODELO_CHAT);
   const settings = voiceSettingsPara(modelo);
   const hash = hashTts(text, voiceId, modelo, settings);
@@ -333,6 +348,10 @@ app.post("/tts", async (req, res) => {
     res.set("Content-Type", "audio/mpeg");
     res.set("X-Tts-Cache", "hit");
     return res.send(cacheado);
+  }
+
+  if (!ttsDentroDeLimiteDiario()) {
+    return res.status(429).json({ error: "Se alcanzó el límite diario de voz IA configurado en el backend. Probá de nuevo mañana, o usá la voz del dispositivo.", codigo: "limite_diario" });
   }
 
   try {
@@ -506,14 +525,23 @@ app.get("/voice/piper/audio/:nombre", async (req, res) => {
 
 // Estado del servidor: para que el frontend sepa si está despierto y qué
 // claves tiene configuradas, sin exponer las claves en sí.
-app.get("/health", (_req, res) => {
+app.get("/health", async (_req, res) => {
+  // vozLocalHabilitada/vozLocalDisponible/vozLocalEstado están separados
+  // a propósito (Etapa 3 de la auditoría de seguridad): antes,
+  // TTS_ENABLED=true solo ya alcanzaba para que /health mostrara la voz
+  // local como disponible, aunque el modelo nunca se hubiera descargado.
+  // "estado" es un código estable para diagnosticar sin exponer rutas
+  // completas del servidor (ver src/voice/voiceService.js).
+  const voz = await estadoVozLocal();
   res.json({
     status: "ok",
     groqConfigurado: Boolean(process.env.GROQ_API_KEY),
     elevenlabsConfigurado: Boolean(process.env.ELEVENLABS_API_KEY),
     vozHombreConfigurada: Boolean(VOZ_HOMBRE),
     vozMujerConfigurada: Boolean(VOZ_MUJER),
-    vozLocalConfigurada: vozLocalHabilitada(),
+    vozLocalHabilitada: voz.habilitada,
+    vozLocalDisponible: voz.disponible,
+    vozLocalEstado: voz.estado,
     turnstileHabilitado: TURNSTILE_ENABLED
   });
 });

@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { textToSpeech } from "../voiceService.js";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { textToSpeech, estadoVozLocal } from "../voiceService.js";
 
 // El modulo lee process.env en cada llamada (cargarVoiceConfig no cachea),
 // asi que estos tests pueden cambiar variables de entorno entre casos sin
@@ -86,6 +89,73 @@ test("textToSpeech: varias llamadas consecutivas con motor desactivado, ninguna 
     assert.equal(r.success, false);
     assert.equal(typeof r.error, "string");
   }
+  limpiarEnv();
+});
+
+// --- estadoVozLocal: separa habilitado/disponible/estado (Etapa 3) ---
+
+test("estadoVozLocal: TTS_ENABLED sin definir -> deshabilitado, nunca toca el filesystem", async () => {
+  limpiarEnv();
+  const r = await estadoVozLocal();
+  assert.deepEqual(r, { habilitada: false, disponible: false, estado: "deshabilitado" });
+  limpiarEnv();
+});
+
+test("estadoVozLocal: motor distinto de piper -> habilitada pero no implementada", async () => {
+  limpiarEnv();
+  process.env.TTS_ENABLED = "true";
+  process.env.TTS_ENGINE = "openvoice";
+  const r = await estadoVozLocal();
+  assert.equal(r.habilitada, true);
+  assert.equal(r.disponible, false);
+  assert.equal(r.estado, "motor_no_implementado");
+  limpiarEnv();
+});
+
+test("estadoVozLocal: habilitada pero sin PIPER_EXECUTABLE configurado -> ejecutable_no_encontrado", async () => {
+  limpiarEnv();
+  process.env.TTS_ENABLED = "true";
+  process.env.TTS_ENGINE = "piper";
+  const r = await estadoVozLocal();
+  assert.equal(r.habilitada, true);
+  assert.equal(r.disponible, false);
+  assert.equal(r.estado, "ejecutable_no_encontrado");
+  limpiarEnv();
+});
+
+test("estadoVozLocal: TTS_ENABLED=true SOLO ya no alcanza para verse como disponible (el bug que se corrige acá)", async () => {
+  limpiarEnv();
+  process.env.TTS_ENABLED = "true";
+  // A propósito: ni PIPER_EXECUTABLE ni PIPER_MODEL_PATH configurados,
+  // que es exactamente la situación real de un deploy sin Piper instalado.
+  const r = await estadoVozLocal();
+  assert.equal(r.habilitada, true, "el motor SÍ está habilitado por configuración");
+  assert.equal(r.disponible, false, "pero NO está realmente disponible/operativo");
+  assert.notEqual(r.estado, "operativo");
+  limpiarEnv();
+});
+
+test("estadoVozLocal: ejecutable y modelo presentes pero el modelo apunta a un archivo que no existe -> modelo_no_encontrado", async () => {
+  limpiarEnv();
+  const dir = await mkdtemp(path.join(tmpdir(), "medusa-piper-estado-"));
+  const ejecutableFalso = path.join(dir, "piper-falso");
+  await writeFile(ejecutableFalso, "x");
+  process.env.TTS_ENABLED = "true";
+  process.env.TTS_ENGINE = "piper";
+  process.env.PIPER_EXECUTABLE = ejecutableFalso;
+  process.env.PIPER_MODEL_PATH = path.join(dir, "no-existe.onnx");
+  const r = await estadoVozLocal();
+  assert.equal(r.estado, "modelo_no_encontrado");
+  limpiarEnv();
+});
+
+test("estadoVozLocal: no expone rutas completas del servidor en la respuesta", async () => {
+  limpiarEnv();
+  process.env.TTS_ENABLED = "true";
+  process.env.TTS_ENGINE = "piper";
+  process.env.PIPER_EXECUTABLE = "/ruta/secreta/del/servidor/piper";
+  const r = await estadoVozLocal();
+  assert.equal(JSON.stringify(r).includes("/ruta/secreta"), false);
   limpiarEnv();
 });
 
