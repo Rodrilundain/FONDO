@@ -55,5 +55,12 @@ export function cargarVoiceConfig() {
     autoplay: leerBooleano(process.env.TTS_AUTOPLAY, false),
     maxCaracteresPorBloque: leerNumero(process.env.TTS_MAX_CHARS_POR_BLOQUE, 500),
     tempMaxAgeMinutos: leerNumero(process.env.TTS_TEMP_MAX_AGE_MINUTOS, 60),
+    // Cada síntesis de Piper es un proceso aparte (spawn) que consume CPU
+    // real -- sin límite, varias solicitudes simultáneas podrían saturar
+    // el contenedor. maxConcurrencia limita cuántas corren en paralelo;
+    // el resto espera en una cola de hasta maxEnCola, y lo que no entra
+    // ahí se rechaza con un error claro en vez de acumularse sin límite.
+    piperMaxConcurrencia: leerNumero(process.env.PIPER_MAX_CONCURRENCIA, 2),
+    piperMaxEnCola: leerNumero(process.env.PIPER_MAX_EN_COLA, 5),
   };
 }

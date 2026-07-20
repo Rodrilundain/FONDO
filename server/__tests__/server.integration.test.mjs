@@ -115,3 +115,54 @@ test("/fetch-document: bloquea SSRF hacia localhost de punta a punta a través d
   const data = await res.json();
   assert.match(data.error, /no está permitida/);
 });
+
+test("/fetch-document: sigue una redirección hacia otro host público y descarga el contenido final", async () => {
+  let llamadasSalientes = 0;
+  global.fetch = async (url, opts) => {
+    const destino = String(url);
+    if (destino.startsWith(baseUrl)) return fetchOriginal(destino, opts);
+    llamadasSalientes++;
+    if (destino === "https://example.com/link-original") {
+      return {
+        status: 302,
+        headers: { get: (h) => (h.toLowerCase() === "location" ? "https://example.com/destino-final" : null) }
+      };
+    }
+    if (destino === "https://example.com/destino-final") {
+      const cuerpo = new TextEncoder().encode("contenido de prueba");
+      let entregado = false;
+      return {
+        status: 200,
+        ok: true,
+        headers: {
+          get: (h) => {
+            if (h.toLowerCase() === "content-length") return String(cuerpo.length);
+            if (h.toLowerCase() === "content-type") return "text/plain";
+            return null;
+          }
+        },
+        body: {
+          getReader: () => ({
+            read: async () => {
+              if (entregado) return { done: true, value: undefined };
+              entregado = true;
+              return { done: false, value: cuerpo };
+            },
+            cancel: async () => {}
+          })
+        }
+      };
+    }
+    throw new Error(`URL inesperada en el mock: ${destino}`);
+  };
+
+  const res = await fetch(`${baseUrl}/fetch-document`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: "http://localhost:3000" },
+    body: JSON.stringify({ url: "https://example.com/link-original" })
+  });
+  assert.equal(res.status, 200);
+  assert.equal(await res.text(), "contenido de prueba");
+  assert.equal(llamadasSalientes, 2, "debería haber pedido primero la URL original y después la de destino");
+  assert.equal(res.headers.get("x-original-url"), "https://example.com/destino-final");
+});

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { textToSpeech, estadoVozLocal } from "../voiceService.js";
+import { textToSpeech, estadoVozLocal, reiniciarLimitadorPiperParaTests } from "../voiceService.js";
 
 // El modulo lee process.env en cada llamada (cargarVoiceConfig no cachea),
 // asi que estos tests pueden cambiar variables de entorno entre casos sin
@@ -13,6 +13,7 @@ function limpiarEnv() {
   for (const clave of [
     "TTS_ENABLED", "TTS_ENGINE", "PIPER_EXECUTABLE", "PIPER_MODEL_PATH",
     "PIPER_CONFIG_PATH", "PIPER_OUTPUT_DIRECTORY", "TTS_AUTOPLAY",
+    "PIPER_MAX_CONCURRENCIA", "PIPER_MAX_EN_COLA",
   ]) delete process.env[clave];
 }
 
@@ -89,6 +90,30 @@ test("textToSpeech: varias llamadas consecutivas con motor desactivado, ninguna 
     assert.equal(r.success, false);
     assert.equal(typeof r.error, "string");
   }
+  limpiarEnv();
+});
+
+test("textToSpeech: varias llamadas concurrentes a Piper (no instalado) pasan todas por el limitador de concurrencia sin romperse", async () => {
+  limpiarEnv();
+  reiniciarLimitadorPiperParaTests();
+  process.env.TTS_ENABLED = "true";
+  process.env.TTS_ENGINE = "piper";
+  process.env.PIPER_MAX_CONCURRENCIA = "1";
+  process.env.PIPER_MAX_EN_COLA = "5";
+  // Piper no está configurado (sin PIPER_EXECUTABLE/PIPER_MODEL_PATH): cada
+  // llamada falla rápido con "piper_no_disponible", pero pasa por
+  // obtenerLimitadorPiper() de todos modos -- esto confirma que el
+  // limitador no rompe el camino normal de éxito/error.
+  const resultados = await Promise.all([
+    textToSpeech({ text: "Uno." }),
+    textToSpeech({ text: "Dos." }),
+    textToSpeech({ text: "Tres." }),
+  ]);
+  for (const r of resultados) {
+    assert.equal(r.success, false);
+    assert.match(r.error, /PIPER_EXECUTABLE/);
+  }
+  reiniciarLimitadorPiperParaTests();
   limpiarEnv();
 });
 

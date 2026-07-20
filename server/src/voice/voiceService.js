@@ -17,9 +17,34 @@ import {
   verificarPiperDisponible, carpetaAudioEsEscribible
 } from "./providers/piperProvider.js";
 import { crearProviderNoImplementado } from "./providers/providerStub.js";
+import { crearLimitadorConcurrencia } from "./concurrencyLimiter.js";
+
+// Cada síntesis de Piper es un proceso del sistema operativo aparte: sin
+// límite, varias solicitudes simultáneas podrían saturar el contenedor
+// (Etapa 4 de la auditoría de seguridad). El limitador se crea una sola
+// vez (tamaño fijado por PIPER_MAX_CONCURRENCIA/PIPER_MAX_EN_COLA al
+// primer uso) y se reutiliza para todas las solicitudes siguientes.
+let limitadorPiper = null;
+function obtenerLimitadorPiper(config) {
+  if (!limitadorPiper) {
+    limitadorPiper = crearLimitadorConcurrencia({
+      maxConcurrentes: config.piperMaxConcurrencia,
+      maxEnCola: config.piperMaxEnCola,
+    });
+  }
+  return limitadorPiper;
+}
+// Solo para tests: permite que un test cambie PIPER_MAX_CONCURRENCIA y
+// vuelva a crear el limitador con el nuevo tamaño.
+export function reiniciarLimitadorPiperParaTests() {
+  limitadorPiper = null;
+}
 
 const PROVIDERS = {
-  piper: { synthesize: (texto, config) => sintetizarConPiper(texto, config.piper) },
+  piper: {
+    synthesize: (texto, config) =>
+      obtenerLimitadorPiper(config)(() => sintetizarConPiper(texto, config.piper)),
+  },
   openvoice: crearProviderNoImplementado("OpenVoice"),
   melotts: crearProviderNoImplementado("MeloTTS"),
 };
