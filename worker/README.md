@@ -112,7 +112,7 @@ claves de prueba.
 | `AI_PRIMARY_PROVIDER` | `gemini` u `openrouter`. | `gemini` |
 | `AI_FALLBACK_ENABLED` | Si se intenta el otro proveedor cuando el principal falla de forma recuperable. | `true` |
 | `AI_REQUEST_TIMEOUT_MS` | Timeout por pedido a un proveedor. | `30000` |
-| `AI_MAX_RETRIES` | Reservado para reintentos dentro de un mismo proveedor (no usado todavía; hoy el "reintento" es cambiar de proveedor). | `1` |
+| `AI_MAX_RETRIES` | Reintentos dentro de un mismo proveedor ante errores recuperables (timeout, caída de conexión, 429/500/502/503/504), con backoff exponencial + jitter -- ver `src/net/httpRetry.js` (Punto 5 de la auditoría v2). Se agotan estos reintentos ANTES de recién ahí cambiar al proveedor de respaldo (`AI_FALLBACK_ENABLED`), que sigue siendo un mecanismo aparte. | `1` |
 | `AI_MAX_INPUT_CHARACTERS` | Tamaño máximo de texto aceptado por pedido. | `50000` |
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | División de documentos largos para el resumen (Etapa 6). | `6000` / `400` |
 | `MAX_DOCUMENT_CHARACTERS` | Límite dursimo antes de ni siquiera intentar procesar. | `400000` |

@@ -309,7 +309,7 @@ npm start
 | `PORT` | No | Puerto local (por defecto 3000; Render lo define solo). |
 | `TURNSTILE_ENABLED` | No | Activa Cloudflare Turnstile en `/ask`, `/tts`, `/fetch-document` y `/voice/piper` (Etapa 2 de la auditoría de seguridad). Por defecto desactivado — el backend funciona igual que siempre sin esto. |
 | `TURNSTILE_SECRET_KEY` | No* | Clave secreta de Turnstile. Obligatoria si `TURNSTILE_ENABLED=true` (sin ella, esas rutas responden 500 en vez de dejar pasar pedidos sin verificar). |
-| `GROQ_TIMEOUT_MS` / `GROQ_MAX_RETRIES` | No | Timeout por pedido a Groq y cantidad de reintentos ante errores recuperables (timeout, caída de conexión, 429/500/502/503/504 — nunca 400 ni clave inválida). Por defecto `20000` / `2`. |
+| `GROQ_TIMEOUT_MS` / `GROQ_MAX_RETRIES` | No | Timeout por pedido a Groq y cantidad de reintentos ante errores recuperables (timeout, caída de conexión, 429/500/502/503/504 — nunca 400 ni clave inválida), con backoff exponencial + jitter (no una espera fija) entre intentos. Por defecto `20000` / `2`. |
 | `ELEVENLABS_TIMEOUT_MS` / `ELEVENLABS_MAX_RETRIES` | No | Igual que arriba, para ElevenLabs. Por defecto `20000` / `2`. |
 | `PIPER_MAX_CONCURRENCIA` / `PIPER_MAX_EN_COLA` | No | Cuántas síntesis de Piper corren en paralelo (cada una es un proceso del sistema aparte) y cuántas más pueden esperar en cola antes de rechazar con un error claro. Por defecto `2` / `5`. |
 | `TRUST_PROXY` | No | Fuerza manualmente el ajuste `trust proxy` de Express (`"true"`, `"false"`, o un valor propio de Express). Sin definir, se activa solo si `RENDER=true` (Render lo pone automáticamente en todos sus servicios). Necesario para que `req.ip` (y por lo tanto el rate limiting) tome la IP real del visitante y no la del proxy de Render — sin esto, todo el mundo comparte el mismo cupo. |
@@ -587,15 +587,17 @@ documento, que tampoco se guarda.
 Dos tipos de pruebas conviven en este proyecto:
 
 - **Automatizadas** (`node --test`, sin dependencias de testing externas):
-  122 tests en `server/` (`npm test`: 36 de voz/Piper, 50 de seguridad
-  SSRF+Turnstile+sesión firmada+límite de caracteres, 9 de
-  timeouts/reintentos, 27 de integración contra la app Express real —
-  rate limiting, `/session`, `trust proxy`, Turnstile, caché de TTS) + 67
-  en `worker/` (`npm test`) + 20 en la raíz (`npm test`: lógica de
-  privacidad de enlaces del frontend -- `js/security/privacidadEnlaces.js`,
-  sin necesitar un navegador) = **209 tests**, corridos en cada Pull
-  Request y push a `main` por `.github/workflows/ci.yml`. El detalle
-  está en las filas de auditoría de seguridad más abajo.
+  127 tests en `server/` (`npm test`: 36 de voz/Piper, 50 de seguridad
+  SSRF+Turnstile+sesión firmada+límite de caracteres, 14 de
+  timeouts/reintentos con backoff exponencial + jitter, 27 de
+  integración contra la app Express real — rate limiting, `/session`,
+  `trust proxy`, Turnstile, caché de TTS) + 88 en `worker/` (`npm test`:
+  incluye los reintentos con backoff propios de Gemini/OpenRouter) + 20
+  en la raíz (`npm test`: lógica de privacidad de enlaces del frontend --
+  `js/security/privacidadEnlaces.js`, sin necesitar un navegador) =
+  **235 tests**, corridos en cada Pull Request y push a `main` por
+  `.github/workflows/ci.yml`. El detalle está en las filas de auditoría
+  de seguridad más abajo.
 - **Manuales**, con Playwright real contra el frontend (sin framework de
   tests de UI automatizado en CI todavía — queda como mejora pendiente).
   Esta sección documenta cómo se probó cada funcionalidad la primera vez
@@ -664,7 +666,7 @@ Dos tipos de pruebas conviven en este proyecto:
 | Regresión: motor de lectura IA, experiencia de lectura (página/tiempo restante/resaltado/continuar/TOC), backend de voz local | Se re-corrieron los tests de rondas anteriores tras agregar el panel de IA | Sin cambios de comportamiento — el panel nuevo no modifica ningún archivo de los que esas pruebas cubren salvo agregados aditivos |
 | Auditoría de seguridad, Etapa 1 (SSRF con redirecciones manuales revalidadas en cada salto, clave de Gemini por header) | `node --test` con `fetch`/DNS mockeados (15 + 2 tests nuevos) | SSRF bloquea redirecciones hacia IPs privadas/reservadas (IPv4, IPv6 loopback/link-local/ULA, IPv4 mapeada en IPv6) en cualquier salto, no solo la URL inicial; la clave de Gemini nunca aparece en la URL de la solicitud |
 | Auditoría de seguridad, Etapa 2 (Turnstile opcional, rate limiting con binding nativo de Cloudflare + respaldo en memoria) | `node --test` con `fetch`/binding mockeados (61 tests del Worker, 19 de seguridad del backend, 10 de integración Express real) + `wrangler deploy --dry-run` en vivo | Turnstile activo rechaza pedidos sin token válido antes de gastar una llamada a Gemini/OpenRouter o a Groq; el binding `RATE_LIMITER` se reconoce en vivo (`wrangler deploy --dry-run`); no probado contra una cuenta de Cloudflare real (no disponible en este entorno) |
-| Auditoría de seguridad, Etapa 3 (timeouts + reintentos controlados en Groq/ElevenLabs, orden del contador diario de ElevenLabs, estado real de la voz local en `/health`) | `node --test` (9 tests de `httpRetry.js` + 1 test específico de 3 casos para el bug del contador + 6 tests de `estadoVozLocal`) | Confirmado: un 400/401/403 nunca se reintenta; un 429/500/502/503/504 sí, hasta el máximo configurado; un hit de caché de `/tts` ya NO consume el límite diario (antes sí, era el bug); `/health` ahora distingue `vozLocalHabilitada` (por configuración) de `vozLocalDisponible`/`vozLocalEstado` (si el ejecutable/modelo/carpeta realmente están operativos), sin exponer rutas del servidor en la respuesta |
+| Auditoría de seguridad, Etapa 3 + Punto 5 de la v2 (timeouts + reintentos controlados con backoff exponencial + jitter en Groq/ElevenLabs/Gemini/OpenRouter, orden del contador diario de ElevenLabs, estado real de la voz local en `/health`) | `node --test` (14 tests de `server/src/net/httpRetry.js` + 10 de `worker/src/net/httpRetry.js` + 5 de `GeminiProvider.js` + 6 de `OpenRouterProvider.js`, todos probando reintento-y-recuperación además del backoff en sí + 1 test específico de 3 casos para el bug del contador + 6 tests de `estadoVozLocal`) | Confirmado: un 400/401/403 nunca se reintenta; un 429/500/502/503/504 sí, hasta el máximo configurado, con una espera que crece exponencialmente y no es un valor fijo (jitter real, probado fijando `Math.random`); un hit de caché de `/tts` ya NO consume el límite diario (antes sí, era el bug); `/health` ahora distingue `vozLocalHabilitada` (por configuración) de `vozLocalDisponible`/`vozLocalEstado` (si el ejecutable/modelo/carpeta realmente están operativos), sin exponer rutas del servidor en la respuesta; en el Worker, `AI_MAX_RETRIES` pasó de ser una variable de entorno leída pero nunca usada a reintentar de verdad antes de recién ahí pasar al proveedor de respaldo |
 | Auditoría de seguridad, Etapa 4 (CI de GitHub Actions, `/fetch-document` siguiendo una redirección real hasta un host público, límite de 20 pedidos/min en `/ask`, límite de concurrencia para Piper, endurecimiento de `server/Dockerfile`, GitHub Pages publicando solo `dist/`, Actions fijadas por SHA, Dependabot) | `node --test` (4 tests de `concurrencyLimiter.js` + 2 tests nuevos de integración Express real) + `npm ci`/`npm test` limpios en `server/` y `worker/` + digest de `node:20-slim` resuelto en vivo contra `registry-1.docker.io` | Confirmado: `/fetch-document` descarga el contenido final después de una redirección simulada a otro host, sin tocarlo hasta revalidar protocolo/hostname/IP; el pedido 21 a `/ask` en el mismo minuto da 429; el limitador de concurrencia nunca deja correr más de `PIPER_MAX_CONCURRENCIA` síntesis a la vez y rechaza con un error claro cuando la cola está llena; el digest de la imagen base es real (confirmado vía la API del registro de Docker Hub) |
 | Auditoría de seguridad, Etapa 5 (proxies públicos con confirmación explícita en vez de automáticos, enlaces `?doc=`/`?url=` ya no se cargan solos) | Playwright real contra un servidor local (`python3 -m http.server`), interceptando `window.confirm` y las solicitudes de red salientes | Confirmado: abrir la página con `?doc=<url>` muestra exactamente un `confirm()` con la URL recibida, y si se cancela NO se dispara ninguna descarga hacia esa URL; la casilla "no usar proxies" persiste en `localStorage` y se refleja al recargar; con un enlace con `?token=` en la query, `puedeUsarProxiesPublicos` no ofrece proxies (chequeado por lectura de código + el mismo mecanismo probado para la casilla, no con un caso Playwright dedicado para cada patrón sensible) |
 

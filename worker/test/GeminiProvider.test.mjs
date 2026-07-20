@@ -44,3 +44,59 @@ test("llamarGemini: sin apiKey devuelve SIN_API_KEY sin llamar a fetch", async (
   assert.equal(resultado.error.code, "SIN_API_KEY");
   assert.equal(seLlamoFetch, false);
 });
+
+test("llamarGemini: 429 se reintenta internamente (Punto 5 de la auditoría v2) y se recupera", async () => {
+  let llamadas = 0;
+  global.fetch = async () => {
+    llamadas++;
+    if (llamadas === 1) return { ok: false, status: 429, json: async () => ({ error: { message: "rate limited" } }) };
+    return { ok: true, json: async () => RESPUESTA_OK };
+  };
+  const resultado = await llamarGemini({
+    apiKey: "clave", model: "gemini-2.5-flash-lite", systemInstruction: "x", content: "y",
+    timeoutMs: 5000, maxRetries: 1, retryDelayMs: 0
+  });
+  assert.equal(resultado.success, true);
+  assert.equal(llamadas, 2);
+});
+
+test("llamarGemini: 500 se reintenta internamente y se recupera", async () => {
+  let llamadas = 0;
+  global.fetch = async () => {
+    llamadas++;
+    if (llamadas === 1) return { ok: false, status: 500, json: async () => ({ error: { message: "server error" } }) };
+    return { ok: true, json: async () => RESPUESTA_OK };
+  };
+  const resultado = await llamarGemini({
+    apiKey: "clave", model: "gemini-2.5-flash-lite", systemInstruction: "x", content: "y",
+    timeoutMs: 5000, maxRetries: 1, retryDelayMs: 0
+  });
+  assert.equal(resultado.success, true);
+  assert.equal(llamadas, 2);
+});
+
+test("llamarGemini: 400 (no recuperable) NUNCA se reintenta, aunque maxRetries > 0", async () => {
+  let llamadas = 0;
+  global.fetch = async () => {
+    llamadas++;
+    return { ok: false, status: 400, json: async () => ({ error: { message: "bad request" } }) };
+  };
+  const resultado = await llamarGemini({
+    apiKey: "clave", model: "gemini-2.5-flash-lite", systemInstruction: "x", content: "y",
+    timeoutMs: 5000, maxRetries: 3, retryDelayMs: 0
+  });
+  assert.equal(resultado.success, false);
+  assert.equal(llamadas, 1, "un 400 no deberia reintentarse nunca");
+});
+
+test("llamarGemini: se alcanza el máximo de reintentos y se devuelve el error final como recuperable", async () => {
+  let llamadas = 0;
+  global.fetch = async () => { llamadas++; return { ok: false, status: 503, json: async () => ({ error: { message: "siempre caido" } }) }; };
+  const resultado = await llamarGemini({
+    apiKey: "clave", model: "gemini-2.5-flash-lite", systemInstruction: "x", content: "y",
+    timeoutMs: 5000, maxRetries: 2, retryDelayMs: 0
+  });
+  assert.equal(resultado.success, false);
+  assert.equal(resultado.recuperable, true);
+  assert.equal(llamadas, 3, "1 intento inicial + 2 reintentos");
+});

@@ -41,6 +41,10 @@ test("Gemini responde bien: se usa Gemini, sin llamar a OpenRouter", async () =>
 
 test("Gemini falla con error recuperable (503) -> cae a OpenRouter y responde bien", async () => {
   mockFetch([
+    // Gemini reintenta internamente (config().maxRetries = 1) antes de
+    // rendirse: hacen falta DOS 503 (intento inicial + 1 reintento) para
+    // que Gemini termine de fallar y AIService recién ahí pase a OpenRouter.
+    { status: 503, body: { error: { message: "Service unavailable" } } },
     { status: 503, body: { error: { message: "Service unavailable" } } },
     { status: 200, body: { choices: [{ message: { content: "Resumen generado por OpenRouter." } }], usage: { prompt_tokens: 8, completion_tokens: 4 } } }
   ]);
@@ -52,7 +56,11 @@ test("Gemini falla con error recuperable (503) -> cae a OpenRouter y responde bi
 
 test("Gemini y OpenRouter fallan -> error normalizado del ultimo intento", async () => {
   mockFetch([
+    // Cada proveedor reintenta una vez (config().maxRetries = 1) antes de
+    // rendirse: 2 respuestas por proveedor.
     { status: 503, body: { error: { message: "Gemini caido" } } },
+    { status: 503, body: { error: { message: "Gemini caido" } } },
+    { status: 500, body: { error: { message: "OpenRouter tambien caido" } } },
     { status: 500, body: { error: { message: "OpenRouter tambien caido" } } }
   ]);
   const r = await generate({ task: "summary", content: "documento", options: {}, config: config() });
@@ -76,7 +84,13 @@ test("Gemini sin API key (error NO recuperable) -> NO cae a OpenRouter", async (
 });
 
 test("fallbackEnabled=false -> aunque Gemini falle con error recuperable, no se intenta OpenRouter", async () => {
-  mockFetch([{ status: 503, body: { error: { message: "Gemini caido" } } }]);
+  // Dos 503 (intento inicial + 1 reintento de config().maxRetries) para
+  // que Gemini termine de fallar de verdad, sin que la cola de mocks se
+  // quede corta y enmascare el motivo real del fallo.
+  mockFetch([
+    { status: 503, body: { error: { message: "Gemini caido" } } },
+    { status: 503, body: { error: { message: "Gemini caido" } } }
+  ]);
   const r = await generate({ task: "summary", content: "documento", options: {}, config: config({ fallbackEnabled: false }) });
   assert.equal(r.success, false);
   assert.equal(r.provider, "gemini");

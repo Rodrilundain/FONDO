@@ -35,6 +35,13 @@ let cargaEnCurso = false; // evita que dos cargas (archivo/URL) se pisen entre s
 // Formato/tamaño permitido, mostrado también en la pantalla inicial.
 const MAX_FILE_SIZE_MB = 20;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
+// Timeout para descargas de documentos (backend propio, descarga directa
+// e intento del navegador, y proxies/lectores externos) -- Punto 5 de la
+// auditoría v2 de seguridad: sin esto, un servicio externo colgado podía
+// dejar la carga girando indefinidamente en vez de fallar con un mensaje
+// claro y pasar al siguiente intento (backend -> directo -> proxies).
+const FETCH_DOCUMENTO_TIMEOUT_MS = 20000;
 const EXTENSIONES_PERMITIDAS = [".pdf", ".docx", ".txt", ".md"];
 
 // === Privacidad: proxies públicos (Etapa 5 de la auditoría de seguridad) ===
@@ -146,17 +153,17 @@ function stripJinaMetadata(text) {
 
 const DOC_READERS = [
   async url => {
-    const res = await fetch("https://r.jina.ai/" + url);
+    const res = await fetch("https://r.jina.ai/" + url, { signal: AbortSignal.timeout(FETCH_DOCUMENTO_TIMEOUT_MS) });
     if (!res.ok) throw new Error("r.jina.ai respondió " + res.status);
     return stripJinaMetadata((await res.text()).trim());
   },
   async url => {
-    const res = await fetch("https://corsproxy.io/?url=" + encodeURIComponent(url));
+    const res = await fetch("https://corsproxy.io/?url=" + encodeURIComponent(url), { signal: AbortSignal.timeout(FETCH_DOCUMENTO_TIMEOUT_MS) });
     if (!res.ok) throw new Error("corsproxy.io respondió " + res.status);
     return htmlToText(await res.text());
   },
   async url => {
-    const res = await fetch("https://api.allorigins.win/get?url=" + encodeURIComponent(url));
+    const res = await fetch("https://api.allorigins.win/get?url=" + encodeURIComponent(url), { signal: AbortSignal.timeout(FETCH_DOCUMENTO_TIMEOUT_MS) });
     if (!res.ok) throw new Error("allorigins respondió " + res.status);
     const data = await res.json();
     if (!data || !data.contents) throw new Error("allorigins devolvió contents vacío");
@@ -306,7 +313,8 @@ async function descargarViaBackend(url) {
   const res = await fetch(`${BACKEND_URL}/fetch-document`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url, turnstileToken: window.MedusaSeguridad?.tokenTurnstileActual() || undefined })
+    body: JSON.stringify({ url, turnstileToken: window.MedusaSeguridad?.tokenTurnstileActual() || undefined }),
+    signal: AbortSignal.timeout(FETCH_DOCUMENTO_TIMEOUT_MS)
   });
   if (!res.ok) {
     let msg = "el backend respondió " + res.status;
@@ -329,7 +337,7 @@ async function fetchBinary(url, puedeUsarProxiesUnaVez) {
   // propio navegador que baje la URL tal cual (funciona si el servidor de
   // origen permite CORS).
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_DOCUMENTO_TIMEOUT_MS) });
     if (!res.ok) throw new Error("respondió " + res.status);
     const buffer = await res.arrayBuffer();
     return { buffer, contentType: res.headers.get("content-type") || "" };
@@ -343,7 +351,7 @@ async function fetchBinary(url, puedeUsarProxiesUnaVez) {
   let lastError;
   for (const buildUrl of BINARY_PROXIES_EXTERNOS) {
     try {
-      const res = await fetch(buildUrl(url));
+      const res = await fetch(buildUrl(url), { signal: AbortSignal.timeout(FETCH_DOCUMENTO_TIMEOUT_MS) });
       if (!res.ok) throw new Error("respondió " + res.status);
       const buffer = await res.arrayBuffer();
       return { buffer, contentType: res.headers.get("content-type") || "" };

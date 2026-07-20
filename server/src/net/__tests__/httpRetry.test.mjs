@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fetchConReintentos } from "../httpRetry.js";
+import { fetchConReintentos, calcularEsperaBackoff } from "../httpRetry.js";
 
 function respuesta(status, ok) {
   return { status, ok: ok ?? (status >= 200 && status < 300) };
@@ -92,4 +92,66 @@ test("fetchConReintentos: cada intento arma su propio AbortSignal (no reutiliza 
   await fetchConReintentos("https://x.test", {}, { fetchImpl, maxRetries: 1, retryDelayMs: 0 });
   assert.equal(signals.length, 2);
   assert.notEqual(signals[0], signals[1]);
+});
+
+test("fetchConReintentos: se recupera tras un error de conexión rechazada (ECONNREFUSED) distinto de un timeout", async () => {
+  let llamadas = 0;
+  const fetchImpl = async () => {
+    llamadas++;
+    if (llamadas < 2) {
+      const err = new Error("connect ECONNREFUSED 127.0.0.1:1");
+      err.code = "ECONNREFUSED";
+      throw err;
+    }
+    return respuesta(200);
+  };
+  const res = await fetchConReintentos("https://x.test", {}, { fetchImpl, maxRetries: 2, retryDelayMs: 0 });
+  assert.equal(res.status, 200);
+  assert.equal(llamadas, 2);
+});
+
+test("calcularEsperaBackoff: con baseMs en 0 siempre da 0, sin importar el intento ni el azar", () => {
+  const azarOriginal = Math.random;
+  Math.random = () => 1;
+  try {
+    assert.equal(calcularEsperaBackoff(0, { baseMs: 0 }), 0);
+    assert.equal(calcularEsperaBackoff(5, { baseMs: 0 }), 0);
+  } finally {
+    Math.random = azarOriginal;
+  }
+});
+
+test("calcularEsperaBackoff: crece exponencialmente con el número de intento (2^intento * base), no linealmente", () => {
+  const azarOriginal = Math.random;
+  Math.random = () => 1; // fija el azar al máximo para poder comparar el techo exacto
+  try {
+    assert.equal(calcularEsperaBackoff(0, { baseMs: 100, maxMs: 100000 }), 100);
+    assert.equal(calcularEsperaBackoff(1, { baseMs: 100, maxMs: 100000 }), 200);
+    assert.equal(calcularEsperaBackoff(2, { baseMs: 100, maxMs: 100000 }), 400);
+    assert.equal(calcularEsperaBackoff(3, { baseMs: 100, maxMs: 100000 }), 800);
+  } finally {
+    Math.random = azarOriginal;
+  }
+});
+
+test("calcularEsperaBackoff: nunca supera maxMs, incluso con intentos altos", () => {
+  const azarOriginal = Math.random;
+  Math.random = () => 1;
+  try {
+    assert.equal(calcularEsperaBackoff(10, { baseMs: 100, maxMs: 1000 }), 1000);
+  } finally {
+    Math.random = azarOriginal;
+  }
+});
+
+test("calcularEsperaBackoff: aplica jitter real (con azar en 0, da 0; con azar en 1, da el techo) -- no es un valor fijo", () => {
+  const azarOriginal = Math.random;
+  try {
+    Math.random = () => 0;
+    assert.equal(calcularEsperaBackoff(2, { baseMs: 100, maxMs: 100000 }), 0);
+    Math.random = () => 0.5;
+    assert.equal(calcularEsperaBackoff(2, { baseMs: 100, maxMs: 100000 }), 200);
+  } finally {
+    Math.random = azarOriginal;
+  }
 });

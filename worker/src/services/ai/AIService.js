@@ -25,6 +25,7 @@ function argumentosPara(nombreProveedor, { instruccion, content, config, allowed
     systemInstruction: instruccion,
     content,
     timeoutMs: config.requestTimeoutMs,
+    maxRetries: config.maxRetries,
     allowedOrigin
   };
 }

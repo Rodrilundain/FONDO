@@ -74,7 +74,11 @@ test("si un fragmento falla, se corta y se devuelve el error real (no se inventa
   let llamada = 0;
   global.fetch = async () => {
     llamada++;
-    if (llamada === 2) return { ok: false, status: 503, json: async () => ({ error: { message: "Gemini caido" } }) };
+    // A partir del segundo fragmento, TODAS las llamadas (incluido el
+    // reintento interno de Gemini, config().maxRetries=1 por defecto)
+    // fallan -- si solo fallara una vez, el reintento la "arreglaría" y
+    // este test dejaría de probar lo que dice probar.
+    if (llamada >= 2) return { ok: false, status: 503, json: async () => ({ error: { message: "Gemini caido" } }) };
     return { ok: true, status: 200, json: async () => ({ candidates: [{ content: { parts: [{ text: "ok" } ] } }] }) };
   };
   const r = await generateSummaryForLongDocument({ content: documentoLargo, options: {}, config: config({ fallbackEnabled: false }) });
