@@ -10,6 +10,11 @@
   "scripts": {
     "start": "node server.js",
     "test:voice": "node --test src/voice/__tests__/*.test.mjs",
+    "test:security": "node --test src/security/__tests__/*.test.mjs",
+    "test:net": "node --test src/net/__tests__/*.test.mjs",
+    "test:tts": "node --test src/tts/__tests__/*.test.mjs",
+    "test:server": "node --test __tests__/*.test.mjs",
+    "test": "npm run test:voice && npm run test:security && npm run test:net && npm run test:tts && npm run test:server",
     "voice": "node test-voice.mjs"
   },
   "dependencies": {

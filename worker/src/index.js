@@ -9,11 +9,10 @@ import { generate, generateSummaryForLongDocument } from "./services/ai/AIServic
 import { validarTexto, validarTarea, validarBloques, validarOptions } from "./validation.js";
 import {
   origenPermitido, encabezadosCORS, listaOrigenesPermitidos,
-  ipDelPedido, dentroDelLimite, limpiarContadoresViejos
+  ipDelPedido, claveLimite, verificarLimite, limpiarContadoresViejos
 } from "./security.js";
+import { verificarTurnstile } from "./turnstile.js";
 import { hashPedido, obtenerDeCache, guardarEnCache } from "./cache.js";
-
-const RATE_LIMIT_POR_MINUTO = 20;
 
 function jsonResponse(body, status, extraHeaders = {}) {
   return new Response(JSON.stringify(body), {
@@ -44,6 +43,31 @@ async function manejarGenerate(request, env, corsHeaders) {
   const config = cargarAIConfig(env);
   if (!config.aiEnabled) {
     return errorSeguro(503, "El asistente de IA esta desactivado en este momento.", corsHeaders);
+  }
+
+  // Turnstile es opcional (TURNSTILE_ENABLED): cuando esta activo, un
+  // pedido sin un token valido nunca llega a gastar una llamada a
+  // Gemini/OpenRouter. El origen/CORS de por si NO alcanza como
+  // proteccion (se puede falsificar el header Origin fuera de un
+  // navegador), asi que esto es una capa real, verificada del lado del
+  // Worker contra la API de Cloudflare.
+  if (config.turnstile.enabled) {
+    if (!config.turnstile.secretKey) {
+      console.error(JSON.stringify({ evento: "turnstile_mal_configurado" }));
+      return errorSeguro(500, "La verificacion de seguridad no esta bien configurada en el servidor.", corsHeaders);
+    }
+    const resultadoTurnstile = await verificarTurnstile({
+      token: payload.turnstileToken,
+      secretKey: config.turnstile.secretKey,
+      remoteIp: ipDelPedido(request),
+      expectedHostname: config.turnstile.expectedHostname || undefined,
+      expectedAction: config.turnstile.expectedAction || undefined,
+      minScore: config.turnstile.minScore,
+      timeoutMs: config.turnstile.timeoutMs
+    });
+    if (!resultadoTurnstile.success) {
+      return errorSeguro(403, "No se pudo verificar que sos una persona. Recargá la página e intentá de nuevo.", corsHeaders);
+    }
   }
 
   if (!validarTarea(payload.task)) {
@@ -115,7 +139,10 @@ function manejarHealth(env, corsHeaders) {
     primaryProvider: config.primaryProvider,
     fallbackEnabled: config.fallbackEnabled,
     geminiConfigurado: Boolean(config.gemini.apiKey),
-    openrouterConfigurado: Boolean(config.openrouter.apiKey && config.openrouter.model)
+    openrouterConfigurado: Boolean(config.openrouter.apiKey && config.openrouter.model),
+    turnstileHabilitado: config.turnstile.enabled,
+    turnstileSiteKey: config.turnstile.siteKey || null,
+    rateLimitBindingActivo: Boolean(env.RATE_LIMITER)
   }, 200, corsHeaders);
 }
 
@@ -147,8 +174,14 @@ export default {
       return errorSeguro(403, "Origen no autorizado.", {});
     }
 
-    const ip = ipDelPedido(request);
-    if (!dentroDelLimite(ip, RATE_LIMIT_POR_MINUTO)) {
+    const config = cargarAIConfig(env);
+    const clave = claveLimite(request);
+    const dentroDelLimite = await verificarLimite({
+      key: clave,
+      maxPorMinuto: config.rateLimit.maxPorMinuto,
+      binding: env.RATE_LIMITER
+    });
+    if (!dentroDelLimite) {
       return errorSeguro(429, "Demasiadas solicitudes. Esperá un minuto e intentá de nuevo.", corsHeaders);
     }
     // Limpieza ocasional y barata: no bloquea la respuesta al cliente.

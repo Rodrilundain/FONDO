@@ -42,6 +42,7 @@ async function verificarWorker() {
     const res = await fetch(`${WORKER_URL}/health`, { signal: AbortSignal.timeout(6000) });
     if (!res.ok) { workerConnStatus.textContent = `🔴 Worker de IA: respondió con error (${res.status})`; return; }
     const data = await res.json();
+    if (data.turnstileSiteKey && window.MedusaSeguridad) window.MedusaSeguridad.usarSiteKeyRemota(data.turnstileSiteKey);
     if (!data.geminiConfigurado && !data.openrouterConfigurado) {
       workerConnStatus.textContent = "🟡 Worker de IA: conectado, pero sin ningún proveedor configurado todavía.";
       return;
@@ -127,15 +128,20 @@ if (iaFuncionesGenerarBtn) {
       const cuerpo = {
         task,
         content: documentoCargado,
-        options: question ? { question } : {}
+        options: question ? { question } : {},
+        turnstileToken: window.MedusaSeguridad?.tokenTurnstileActual() || undefined
       };
       if (task === "summary" && typeof documentoBloques !== "undefined" && documentoBloques.length) {
         cuerpo.bloques = documentoBloques;
       }
 
+      const idSesion = window.MedusaSeguridad?.idDeSesion();
       const res = await fetch(`${WORKER_URL}/api/generate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(idSesion ? { "X-Medusa-Session-Id": idSesion } : {})
+        },
         body: JSON.stringify(cuerpo),
         signal: controlador.signal
       });

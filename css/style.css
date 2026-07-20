@@ -140,6 +140,26 @@ button { min-height: 44px; min-width: 44px; }
 .hero-panel .status { text-shadow: 0 2px 10px rgba(0,0,0,0.85); }
 .hero-panel .btn-row { width: 100%; }
 
+/* Confirmación de enlace compartido (?doc=/?url=) -- Etapa 3/Punto 4 de la
+   auditoría v2 de seguridad: nunca se descarga solo, se pide autorización
+   explícita mostrando de dónde viene el enlace antes de tocar la red. */
+.shared-doc-confirm {
+  width: 100%;
+  text-align: left;
+  background: rgba(255,193,7,0.08);
+  border: 1px solid rgba(255,193,7,0.35);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.shared-doc-confirm-titulo { font-weight: 700; }
+.shared-doc-confirm-detalle { font-size: 0.9em; display: flex; flex-direction: column; gap: 2px; word-break: break-word; }
+.shared-doc-confirm-botones { display: flex; gap: 8px; flex-wrap: wrap; }
+.hero-btn-secundario { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.25); }
+.hero-btn-secundario:hover { background: rgba(255,255,255,0.16); }
+
 .objetivo-panel {
   width: 100%;
   background: rgba(125,202,255,0.08);

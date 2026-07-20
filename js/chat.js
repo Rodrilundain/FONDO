@@ -2,6 +2,13 @@
 // Responsabilidad: enviar preguntas al backend (con reintento si Render
 // está dormido), elegir qué fragmentos del documento mandar como contexto
 // (RAG simple, sin base vectorial) y mostrar la conversación.
+//
+// Dependencia implícita de orden de carga (documentada a propósito, ver
+// el mismo comentario en voz.js/documentos.js): usa `BACKEND_URL`/
+// `toggleMenu`, declaradas en app.js (que carga al final en index.html).
+// Seguro porque solo se referencian dentro de sendQuestion(), que corre
+// en respuesta a que el usuario mande una pregunta -- nunca durante el
+// parseo inicial de este archivo.
 
 const messages = document.getElementById("messages");
 const question = document.getElementById("question");
@@ -323,7 +330,12 @@ async function medusaRespond(query) {
     const res = await fetchConReintento(`${BACKEND_URL}/ask`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ context: contexto, question: query, objetivo: typeof objetivoActual !== "undefined" ? objetivoActual : null })
+      body: JSON.stringify({
+        context: contexto,
+        question: query,
+        objetivo: typeof objetivoActual !== "undefined" ? objetivoActual : null,
+        turnstileToken: window.MedusaSeguridad?.tokenTurnstileActual() || undefined
+      })
     }, texto => { msgBot.querySelector(".msg-texto").textContent = texto; });
 
     let data = null;

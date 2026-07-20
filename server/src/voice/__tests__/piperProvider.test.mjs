@@ -7,6 +7,7 @@ import {
   verificarPiperDisponible,
   sintetizarConPiper,
   limpiarArchivosViejos,
+  carpetaAudioEsEscribible,
 } from "../providers/piperProvider.js";
 
 test("verificarPiperDisponible: sin PIPER_EXECUTABLE ni PIPER_MODEL_PATH configurados", async () => {
@@ -61,6 +62,20 @@ test("limpiarArchivosViejos: borra solo archivos propios (prefijo medusa-piper-)
 
 test("limpiarArchivosViejos: no falla si el directorio todavia no existe", async () => {
   await limpiarArchivosViejos("/ruta/que/no/existe/para/nada", 60);
+});
+
+test("carpetaAudioEsEscribible: true para una carpeta temporal real (la crea si hace falta)", async () => {
+  const dir = path.join(await mkdtemp(path.join(tmpdir(), "medusa-piper-write-")), "subcarpeta-nueva");
+  assert.equal(await carpetaAudioEsEscribible(dir), true);
+});
+
+test("carpetaAudioEsEscribible: false para una ruta que no se puede crear/escribir", async () => {
+  // Un archivo comun no se puede usar como "directorio padre" -- mkdir
+  // recursive falla ahi con ENOTDIR.
+  const dir = await mkdtemp(path.join(tmpdir(), "medusa-piper-notdir-"));
+  const archivoComun = path.join(dir, "esto-es-un-archivo");
+  await writeFile(archivoComun, "x");
+  assert.equal(await carpetaAudioEsEscribible(path.join(archivoComun, "subcarpeta")), false);
 });
 
 // --- Prueba de integracion real, solo si el entorno tiene Piper configurado ---

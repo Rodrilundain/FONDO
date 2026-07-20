@@ -61,6 +61,15 @@ services:
       # de GitHub Pages y localhost.
       - key: ALLOWED_ORIGIN
         sync: false
+      # Turnstile (Etapa 2 de la auditoría de seguridad, opcional): protege
+      # /ask, /tts, /fetch-document y /voice/piper de scripts automatizados.
+      # Con TURNSTILE_ENABLED sin definir (o "false"), este backend funciona
+      # exactamente igual que antes. Ver README.md, sección "Variables de
+      # entorno".
+      - key: TURNSTILE_ENABLED
+        sync: false
+      - key: TURNSTILE_SECRET_KEY
+        sync: false
       # NOTA sobre la voz local con Piper: hasta acá este servicio usaba
       # runtime: node (sin Python), así que TTS_ENABLED no servía de nada
       # en Render. Ahora usa runtime: docker (ver server/Dockerfile), que

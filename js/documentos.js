@@ -9,6 +9,7 @@ if (window.pdfjsLib) {
     "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 }
 
+const proxiesPublicosDeshabilitadosInput = document.getElementById("proxiesPublicosDeshabilitadosInput");
 const docUrlInput = document.getElementById("docUrl");
 const docFileInput = document.getElementById("docFile");
 const status = document.getElementById("status");
@@ -19,6 +20,12 @@ const heroLinkRow = document.getElementById("heroLinkRow");
 const playbackControls = document.getElementById("playbackControls");
 const dropzone = document.getElementById("dropzone");
 const heroPanel = document.getElementById("heroPanel");
+const sharedDocConfirmPanel = document.getElementById("sharedDocConfirmPanel");
+const sharedDocConfirmDominio = document.getElementById("sharedDocConfirmDominio");
+const sharedDocConfirmTipo = document.getElementById("sharedDocConfirmTipo");
+const sharedDocConfirmUrl = document.getElementById("sharedDocConfirmUrl");
+const sharedDocConfirmCargar = document.getElementById("sharedDocConfirmCargar");
+const sharedDocConfirmCancelar = document.getElementById("sharedDocConfirmCancelar");
 
 let documentoCargado = "";
 let documentoBloques = []; // {pagina, texto} para PDF, {tipo, texto} para DOCX, [{texto}] para TXT/MD
@@ -28,7 +35,61 @@ let cargaEnCurso = false; // evita que dos cargas (archivo/URL) se pisen entre s
 // Formato/tamaño permitido, mostrado también en la pantalla inicial.
 const MAX_FILE_SIZE_MB = 20;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
+// Timeout para descargas de documentos (backend propio, descarga directa
+// e intento del navegador, y proxies/lectores externos) -- Punto 5 de la
+// auditoría v2 de seguridad: sin esto, un servicio externo colgado podía
+// dejar la carga girando indefinidamente en vez de fallar con un mensaje
+// claro y pasar al siguiente intento (backend -> directo -> proxies).
+const FETCH_DOCUMENTO_TIMEOUT_MS = 20000;
 const EXTENSIONES_PERMITIDAS = [".pdf", ".docx", ".txt", ".md"];
+
+// === Privacidad: proxies públicos (Etapa 5 de la auditoría de seguridad) ===
+// Los proxies externos (r.jina.ai, corsproxy.io, allorigins.win) están
+// desactivados por defecto en el sentido de que NUNCA se usan solos: si
+// el backend propio (que sí valida SSRF) no puede descargar un enlace,
+// se le pregunta al usuario si quiere probar con esos servicios,
+// nombrándolos, antes de mandarles la URL. Esta casilla es para
+// desactivarlos por completo (ni siquiera preguntar).
+let proxiesPublicosDeshabilitados = localStorage.getItem("medusaProxiesPublicosDeshabilitados") === "1";
+if (proxiesPublicosDeshabilitadosInput) {
+  proxiesPublicosDeshabilitadosInput.checked = proxiesPublicosDeshabilitados;
+  proxiesPublicosDeshabilitadosInput.addEventListener("change", e => {
+    proxiesPublicosDeshabilitados = e.target.checked;
+    localStorage.setItem("medusaProxiesPublicosDeshabilitados", proxiesPublicosDeshabilitados ? "1" : "0");
+  });
+}
+
+// La heurística de qué URLs no deben mandarse a un tercero (token, firma,
+// credenciales, host local, URL excesivamente larga...) vive en
+// js/security/privacidadEnlaces.js -- separada de este archivo para poder
+// probarla sin DOM (ver js/security/__tests__/privacidadEnlaces.test.mjs)
+// y porque es lógica de seguridad/validación, no de manejo de documentos.
+// No se destructuran los nombres (const { dominioDeUrl, ... } = ...):
+// documentos.js y privacidadEnlaces.js son dos <script> clásicos que
+// comparten un mismo scope global, y esos mismos nombres ya existen ahí
+// como declaraciones `function` -- una `const` con el mismo nombre en
+// OTRO script del mismo scope global es un SyntaxError en el navegador
+// ("Identifier ... has already been declared"), aunque cada script se
+// vea aislado al leerlo por separado. Confirmado con Playwright real.
+const PrivacidadEnlaces = window.MedusaPrivacidadEnlaces;
+
+// Pregunta una sola vez, nombrando los servicios concretos, antes de usar
+// CUALQUIER proxy externo para este enlace. Nunca pregunta (ni usa
+// proxies) si el enlace parece sensible, o si el usuario los desactivó
+// por completo en "Configuración avanzada".
+function puedeUsarProxiesPublicos(url) {
+  return PrivacidadEnlaces.decidirUsoDeProxies({
+    url,
+    proxiesDeshabilitados: proxiesPublicosDeshabilitados,
+    confirmarConUsuario: () => confirm(
+      "MedusaLee no pudo descargar este enlace de forma directa/segura.\n\n" +
+      "¿Querés que se pruebe con un servicio externo (r.jina.ai, corsproxy.io o allorigins.win)? " +
+      "Esto comparte la URL del documento con ese tercero.\n\n" +
+      "Enlace: " + url
+    )
+  });
+}
 
 function fijarBotonesDeCarga(deshabilitados) {
   heroUploadBtn.disabled = deshabilitados;
@@ -92,17 +153,17 @@ function stripJinaMetadata(text) {
 
 const DOC_READERS = [
   async url => {
-    const res = await fetch("https://r.jina.ai/" + url);
+    const res = await fetch("https://r.jina.ai/" + url, { signal: AbortSignal.timeout(FETCH_DOCUMENTO_TIMEOUT_MS) });
     if (!res.ok) throw new Error("r.jina.ai respondió " + res.status);
     return stripJinaMetadata((await res.text()).trim());
   },
   async url => {
-    const res = await fetch("https://corsproxy.io/?url=" + encodeURIComponent(url));
+    const res = await fetch("https://corsproxy.io/?url=" + encodeURIComponent(url), { signal: AbortSignal.timeout(FETCH_DOCUMENTO_TIMEOUT_MS) });
     if (!res.ok) throw new Error("corsproxy.io respondió " + res.status);
     return htmlToText(await res.text());
   },
   async url => {
-    const res = await fetch("https://api.allorigins.win/get?url=" + encodeURIComponent(url));
+    const res = await fetch("https://api.allorigins.win/get?url=" + encodeURIComponent(url), { signal: AbortSignal.timeout(FETCH_DOCUMENTO_TIMEOUT_MS) });
     if (!res.ok) throw new Error("allorigins respondió " + res.status);
     const data = await res.json();
     if (!data || !data.contents) throw new Error("allorigins devolvió contents vacío");
@@ -231,11 +292,12 @@ function driveDirectDownload(url) {
   return m ? `https://drive.google.com/uc?export=download&id=${m[1]}` : url;
 }
 
-// Proxies para descargar el archivo binario si el backend propio no está
-// disponible: primero intento directo (funciona si el servidor permite
-// CORS), y si falla, dos proxies públicos de respaldo.
-const BINARY_PROXIES = [
-  url => url,
+// Proxies EXTERNOS de respaldo para descargar el archivo binario si el
+// backend propio no está disponible NI el intento directo (que no es un
+// proxy de terceros, es pedirle al propio navegador que baje la URL tal
+// cual). Solo se usan con confirmación explícita del usuario -- ver
+// puedeUsarProxiesPublicos() más arriba.
+const BINARY_PROXIES_EXTERNOS = [
   url => "https://corsproxy.io/?url=" + encodeURIComponent(url),
   url => "https://api.allorigins.win/raw?url=" + encodeURIComponent(url)
 ];
@@ -251,7 +313,8 @@ async function descargarViaBackend(url) {
   const res = await fetch(`${BACKEND_URL}/fetch-document`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url })
+    body: JSON.stringify({ url, turnstileToken: window.MedusaSeguridad?.tokenTurnstileActual() || undefined }),
+    signal: AbortSignal.timeout(FETCH_DOCUMENTO_TIMEOUT_MS)
   });
   if (!res.ok) {
     let msg = "el backend respondió " + res.status;
@@ -262,18 +325,33 @@ async function descargarViaBackend(url) {
   return { buffer, contentType: res.headers.get("content-type") || "" };
 }
 
-async function fetchBinary(url) {
+async function fetchBinary(url, puedeUsarProxiesUnaVez) {
   if (BACKEND_URL) {
     try {
       return await descargarViaBackend(url);
     } catch (err) {
-      console.warn("Descarga vía backend falló, probando proxies del navegador:", err);
+      console.warn("Descarga vía backend falló, probando descarga directa:", err);
     }
   }
+  // Intento directo primero: no es un proxy de terceros, es pedirle al
+  // propio navegador que baje la URL tal cual (funciona si el servidor de
+  // origen permite CORS).
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_DOCUMENTO_TIMEOUT_MS) });
+    if (!res.ok) throw new Error("respondió " + res.status);
+    const buffer = await res.arrayBuffer();
+    return { buffer, contentType: res.headers.get("content-type") || "" };
+  } catch (err) {
+    console.warn("Descarga directa falló, evaluando proxies externos:", err);
+  }
+
+  if (!puedeUsarProxiesUnaVez()) {
+    throw new Error("No se pudo descargar el archivo (el backend no está disponible y no se usaron proxies externos).");
+  }
   let lastError;
-  for (const buildUrl of BINARY_PROXIES) {
+  for (const buildUrl of BINARY_PROXIES_EXTERNOS) {
     try {
-      const res = await fetch(buildUrl(url));
+      const res = await fetch(buildUrl(url), { signal: AbortSignal.timeout(FETCH_DOCUMENTO_TIMEOUT_MS) });
       if (!res.ok) throw new Error("respondió " + res.status);
       const buffer = await res.arrayBuffer();
       return { buffer, contentType: res.headers.get("content-type") || "" };
@@ -292,11 +370,20 @@ async function fetchDocumentText(originalUrl) {
   const url = driveDirectDownload(originalUrl);
   const tipoPorExtension = detectFileTypeByExtension(url);
 
+  // Se pregunta UNA sola vez por carga si se pueden usar proxies externos
+  // (Etapa 5 de la auditoría de seguridad), no una vez por cada intento
+  // de descarga -- para no ser repetitivo con el mismo enlace.
+  let permitirProxies = null;
+  const puedeUsarProxiesUnaVez = () => {
+    if (permitirProxies === null) permitirProxies = puedeUsarProxiesPublicos(originalUrl);
+    return permitirProxies;
+  };
+
   // Si tiene extensión conocida (.pdf/.docx/.txt) o es un link de Drive
   // reescrito, primero probamos descargarlo como archivo binario.
   if (tipoPorExtension || url !== originalUrl) {
     try {
-      const { buffer, contentType } = await fetchBinary(url);
+      const { buffer, contentType } = await fetchBinary(url, puedeUsarProxiesUnaVez);
       if (buffer.byteLength > MAX_FILE_SIZE_BYTES) {
         throw new Error(`Este archivo supera el tamaño máximo permitido (${MAX_FILE_SIZE_MB} MB).`);
       }
@@ -308,7 +395,12 @@ async function fetchDocumentText(originalUrl) {
     }
   }
 
-  // Fallback: tratarlo como una página web genérica.
+  // Fallback: tratarlo como una página web genérica -- DOC_READERS son
+  // todos proxies externos (no hay forma "directa" de leer una página
+  // como texto sin CORS), así que acá también hace falta permiso.
+  if (!puedeUsarProxiesUnaVez()) {
+    throw new Error("No se pudo descargar el archivo (el backend no está disponible y no se usaron proxies externos).");
+  }
   let lastError;
   for (const reader of DOC_READERS) {
     try {
@@ -450,14 +542,38 @@ async function procesarArchivo(file) {
 
 docFileInput.addEventListener("change", () => procesarArchivo(docFileInput.files[0]));
 
-// Carga automática cuando el documento llega compartido por URL (?doc= o ?url=)
+// Carga automática cuando el documento llega compartido por URL (?doc= o
+// ?url=) -- Punto 4 de la auditoría v2 de seguridad: un enlace recibido
+// así ya NO se descarga solo con abrir la página, ni se pide autorización
+// con un simple diálogo confirm() del navegador. Se muestra un panel con
+// el dominio, el tipo estimado y la URL resumida, y hace falta tocar
+// "Cargar documento" a propósito -- para que abrir un link compartido
+// nunca dispare una descarga (y potencialmente el envío de esa URL a un
+// proxy externo) sin que la persona lo haya decidido conscientemente.
+function mostrarConfirmacionEnlaceCompartido(sharedUrl) {
+  heroLinkRow.hidden = false;
+  heroLinkBtn.setAttribute("aria-expanded", "true");
+  docUrlInput.value = sharedUrl;
+
+  sharedDocConfirmDominio.textContent = PrivacidadEnlaces.dominioDeUrl(sharedUrl);
+  sharedDocConfirmTipo.textContent = PrivacidadEnlaces.tipoEstimadoDeUrl(sharedUrl);
+  sharedDocConfirmUrl.textContent = PrivacidadEnlaces.resumirUrl(sharedUrl);
+  sharedDocConfirmPanel.hidden = false;
+
+  const ocultarPanel = () => { sharedDocConfirmPanel.hidden = true; };
+  sharedDocConfirmCargar.addEventListener("click", () => {
+    ocultarPanel();
+    loadDocumentFromUrl(sharedUrl);
+  }, { once: true });
+  sharedDocConfirmCancelar.addEventListener("click", () => {
+    ocultarPanel();
+    status.textContent = "El enlace quedó pegado en el campo de arriba. Presioná Enter ahí cuando quieras cargarlo.";
+  }, { once: true });
+}
+
 (function autoLoadSharedDoc() {
   const params = new URLSearchParams(window.location.search);
   const sharedUrl = params.get("doc") || params.get("url");
-  if (sharedUrl) {
-    heroLinkRow.hidden = false;
-    heroLinkBtn.setAttribute("aria-expanded", "true");
-    docUrlInput.value = sharedUrl;
-    loadDocumentFromUrl(sharedUrl);
-  }
+  if (!sharedUrl) return;
+  mostrarConfirmacionEnlaceCompartido(sharedUrl);
 })();

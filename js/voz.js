@@ -3,6 +3,18 @@
 // objetivo, síntesis del navegador (gratis), voz de IA opcional vía
 // backend (ElevenLabs), lectura fragmento por fragmento con progreso, y
 // los controles de reproducción del documento cargado.
+//
+// Dependencia implícita de orden de carga (Etapa 6 de la auditoría de
+// seguridad, documentada a propósito en vez de eliminada — ver también
+// documentos.js): este archivo usa `documentoCargado`/`documentoBloques`
+// (declaradas en documentos.js, que carga DESPUÉS de este script en
+// index.html) y `BACKEND_URL`/`toggleMenu` (declaradas en app.js, que
+// carga al final). Es seguro porque acá solo se referencian dentro de
+// funciones que se ejecutan en respuesta a una interacción del usuario
+// (reproducir, pausar, etc.) — nunca durante el parseo inicial de este
+// archivo — así que para cuando corren, los demás scripts ya terminaron
+// de declarar todo. Si se reordenan los <script> en index.html, hay que
+// mantener este archivo antes de documentos.js y app.js, o esto rompe.
 
 const vozActivaToggle = document.getElementById("vozActiva");
 const vozModoSelect = document.getElementById("vozModo");
@@ -683,7 +695,10 @@ async function obtenerAudioBloqueIA(indice) {
     const res = await fetch(`${BACKEND_URL}/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: texto, tipo: generoParaElevenLabs(), contexto: "documento" })
+      body: JSON.stringify({
+        text: texto, tipo: generoParaElevenLabs(), contexto: "documento",
+        turnstileToken: window.MedusaSeguridad?.tokenTurnstileActual() || undefined
+      })
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -1239,7 +1254,10 @@ async function speakConIA(text) {
     const res = await fetch(`${BACKEND_URL}/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: textoLimpio, tipo: generoParaElevenLabs(), contexto: "chat" })
+      body: JSON.stringify({
+        text: textoLimpio, tipo: generoParaElevenLabs(), contexto: "chat",
+        turnstileToken: window.MedusaSeguridad?.tokenTurnstileActual() || undefined
+      })
     });
     if (!res.ok) {
       let codigo = "";
